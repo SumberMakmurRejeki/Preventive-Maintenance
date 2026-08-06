@@ -7,19 +7,17 @@ use App\Models\PmChecksheetMachine;
 use App\Models\PmChecksheetPart;
 use App\Models\PmChecksheetStandard;
 use App\Models\PmSchedule;
-use App\Models\PmScheduleDate;
 use App\Services\Auth\ActivityLogService;
-use Carbon\Carbon;
+use App\Services\PM\PmScheduleDateReconciler;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 class PmChecksheetService
 {
     public function __construct(
         protected ActivityLogService $activityLog,
-    ) {
-    }
+        protected PmScheduleDateReconciler $scheduleDateReconciler,
+    ) {}
 
     public function create(Request $request, array $payload): PmChecksheet
     {
@@ -59,8 +57,6 @@ class PmChecksheetService
                 'description' => $payload['description'] ?? null,
                 'is_active' => (bool) ($payload['is_active'] ?? true),
             ])->save();
-
-            $checksheet->machineAssignments()->delete();
 
             $this->syncWizardData($checksheet, $payload, $request);
 
@@ -201,107 +197,66 @@ class PmChecksheetService
         $schedule = $payload['schedule'];
 
         foreach ($selectedMachineIds as $machineId) {
-            $assignment = PmChecksheetMachine::query()->create([
-                'pm_checksheet_id' => $checksheet->id,
-                'machine_id' => $machineId,
-                'assigned_at' => now(),
-                'created_by' => $request->user()?->id,
-            ]);
+            $assignment = PmChecksheetMachine::query()->updateOrCreate(
+                [
+                    'pm_checksheet_id' => $checksheet->id,
+                    'machine_id' => $machineId,
+                ],
+                [
+                    'assigned_at' => now(),
+                    'created_by' => $request->user()?->id,
+                ],
+            );
 
             foreach (($parts[$machineId] ?? []) as $partRow) {
-                $part = PmChecksheetPart::query()->create([
-                    'pm_checksheet_machine_id' => $assignment->id,
-                    'part_name' => $partRow['name'],
-                    'description' => $partRow['description'] ?? null,
-                    'is_active' => true,
-                ]);
+                $part = PmChecksheetPart::query()->updateOrCreate(
+                    [
+                        'pm_checksheet_machine_id' => $assignment->id,
+                        'part_name' => $partRow['name'],
+                    ],
+                    [
+                        'description' => $partRow['description'] ?? null,
+                        'is_active' => true,
+                    ],
+                );
 
                 $partKey = (string) ($partRow['id'] ?? '');
 
                 foreach (($standards[$partKey] ?? []) as $standardRow) {
-                    PmChecksheetStandard::query()->create([
-                        'pm_checksheet_part_id' => $part->id,
-                        'standard_name' => $standardRow['name'],
-                        'input_type' => $standardRow['input_type'],
-                        'action_options' => $standardRow['input_type'] === 'action' ? array_values($standardRow['action_options'] ?? []) : null,
-                        'target_value' => $standardRow['input_type'] === 'number' ? $standardRow['target_value'] : null,
-                        'min_value' => $standardRow['input_type'] === 'range' ? $standardRow['min_value'] : null,
-                        'max_value' => $standardRow['input_type'] === 'range' ? $standardRow['max_value'] : null,
-                        'unit' => $standardRow['unit'] ?? null,
-                        'description' => $standardRow['description'] ?? null,
-                        'is_required' => (bool) ($standardRow['is_required'] ?? true),
-                        'is_active' => (bool) ($standardRow['is_active'] ?? true),
-                    ]);
+                    PmChecksheetStandard::query()->updateOrCreate(
+                        [
+                            'pm_checksheet_part_id' => $part->id,
+                            'standard_name' => $standardRow['name'],
+                        ],
+                        [
+                            'input_type' => $standardRow['input_type'],
+                            'action_options' => $standardRow['input_type'] === 'action' ? array_values($standardRow['action_options'] ?? []) : null,
+                            'target_value' => $standardRow['input_type'] === 'number' ? $standardRow['target_value'] : null,
+                            'min_value' => $standardRow['input_type'] === 'range' ? $standardRow['min_value'] : null,
+                            'max_value' => $standardRow['input_type'] === 'range' ? $standardRow['max_value'] : null,
+                            'unit' => $standardRow['unit'] ?? null,
+                            'description' => $standardRow['description'] ?? null,
+                            'is_required' => (bool) ($standardRow['is_required'] ?? true),
+                            'is_active' => (bool) ($standardRow['is_active'] ?? true),
+                        ],
+                    );
                 }
             }
 
-            $scheduleModel = PmSchedule::query()->create([
-                'pm_checksheet_machine_id' => $assignment->id,
-                'frequency_type' => $schedule['frequency_type'],
-                'weekly_days' => $schedule['frequency_type'] === 'weekly' ? array_values($schedule['weekly_days']) : null,
-                'monthly_day' => $schedule['frequency_type'] === 'monthly' ? $schedule['monthly_day'] : null,
-                'start_date' => $schedule['start_date'],
-                'generate_until' => $schedule['generate_until'],
-                'is_active' => true,
-                'created_by' => $request->user()?->id,
-            ]);
+            $scheduleModel = PmSchedule::query()->updateOrCreate(
+                ['pm_checksheet_machine_id' => $assignment->id],
+                [
+                    'frequency_type' => $schedule['frequency_type'],
+                    'weekly_days' => $schedule['frequency_type'] === 'weekly' ? array_values($schedule['weekly_days']) : null,
+                    'monthly_day' => $schedule['frequency_type'] === 'monthly' ? $schedule['monthly_day'] : null,
+                    'start_date' => $schedule['start_date'],
+                    'generate_until' => $schedule['generate_until'],
+                    'is_active' => true,
+                    'created_by' => $request->user()?->id,
+                ],
+            );
 
-            $rows = collect($this->generateScheduleDates($schedule))
-                ->map(fn (string $date) => [
-                    'pm_schedule_id' => $scheduleModel->id,
-                    'machine_id' => $machineId,
-                    'scheduled_date' => $date,
-                    'status' => 'scheduled',
-                    'status_changed_at' => null,
-                    'generated_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ])
-                ->all();
-
-            if ($rows !== []) {
-                PmScheduleDate::query()->insert($rows);
-            }
+            $this->scheduleDateReconciler->reconcile($scheduleModel);
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $schedule
-     * @return array<int, string>
-     */
-    protected function generateScheduleDates(array $schedule): array
-    {
-        $start = Carbon::parse($schedule['start_date'])->startOfDay();
-        $end = Carbon::parse($schedule['generate_until'])->startOfDay();
-
-        $dates = [];
-        $cursor = $start->copy();
-
-        while ($cursor->lte($end)) {
-            $shouldInclude = false;
-
-            if ($schedule['frequency_type'] === 'daily') {
-                $shouldInclude = true;
-            }
-
-            if ($schedule['frequency_type'] === 'weekly') {
-                $selectedDays = array_map('intval', $schedule['weekly_days'] ?? []);
-                $shouldInclude = in_array((int) $cursor->dayOfWeek, $selectedDays, true);
-            }
-
-            if ($schedule['frequency_type'] === 'monthly') {
-                $targetDay = max(1, min(31, (int) ($schedule['monthly_day'] ?? 1)));
-                $validDay = min($targetDay, $cursor->copy()->endOfMonth()->day);
-                $shouldInclude = $cursor->day === $validDay;
-            }
-
-            if ($shouldInclude) {
-                $dates[] = $cursor->toDateString();
-            }
-
-            $cursor->addDay();
-        }
-
-        return array_values(array_unique($dates));
     }
 }

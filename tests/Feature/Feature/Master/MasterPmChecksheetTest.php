@@ -6,6 +6,9 @@ use App\Models\GuestSession;
 use App\Models\Location;
 use App\Models\Machine;
 use App\Models\PmChecksheet;
+use App\Models\PmExecution;
+use App\Models\PmSchedule;
+use App\Models\PmScheduleDate;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -124,7 +127,7 @@ class MasterPmChecksheetTest extends TestCase
         $this->assertDatabaseHas('pm_checksheet_parts', ['part_name' => 'Motor Drive']);
         $this->assertDatabaseHas('pm_checksheet_standards', ['standard_name' => 'Cek suhu motor', 'input_type' => 'number']);
         $this->assertDatabaseHas('pm_schedules', ['frequency_type' => 'daily']);
-        $this->assertDatabaseHas('pm_schedule_dates', ['scheduled_date' => '2026-05-21']);
+        $this->assertDatabaseHas('pm_schedule_dates', ['scheduled_date' => '2026-05-21 00:00:00']);
         $this->assertDatabaseHas('user_activity_logs', ['module_name' => 'master_checksheet', 'action' => 'create']);
     }
 
@@ -182,5 +185,131 @@ class MasterPmChecksheetTest extends TestCase
         $this->actingAs($this->admin)->delete("/pm/master-checksheet/{$checksheet->id}")->assertRedirect('/pm/master-checksheet');
         $this->assertDatabaseMissing('pm_checksheets', ['id' => $checksheet->id]);
         $this->assertDatabaseHas('user_activity_logs', ['module_name' => 'master_checksheet', 'action' => 'delete']);
+    }
+
+    public function test_updating_checksheet_keeps_existing_pm_review_data(): void
+    {
+        $this->test_admin_can_create_checksheet_with_nested_data();
+
+        $checksheet = PmChecksheet::query()->where('checksheet_code', 'PM-CH-001')->firstOrFail();
+        $scheduleDate = PmScheduleDate::query()->firstOrFail();
+        $historicalScheduleDate = PmScheduleDate::query()->whereKeyNot($scheduleDate->id)->firstOrFail();
+        $unworkedScheduleDate = PmScheduleDate::query()
+            ->whereKeyNot([$scheduleDate->id, $historicalScheduleDate->id])
+            ->firstOrFail();
+        $scheduleDate->forceFill(['status' => 'waiting_review'])->save();
+
+        $execution = PmExecution::query()->create([
+            'pm_schedule_date_id' => $scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'waiting_review',
+            'started_at' => now()->subHour(),
+            'submitted_at' => now(),
+        ]);
+
+        PmExecution::query()->create([
+            'pm_schedule_date_id' => $historicalScheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ])->delete();
+
+        PmScheduleDate::query()->create([
+            'pm_schedule_id' => $scheduleDate->pm_schedule_id,
+            'machine_id' => $this->machine->id,
+            'scheduled_date' => '2026-08-01',
+            'status' => 'scheduled',
+            'generated_at' => now(),
+        ])->delete();
+
+        PmSchedule::query()->whereKey($scheduleDate->pm_schedule_id)->update([
+            'frequency_type' => 'daily',
+            'weekly_days' => null,
+            'monthly_day' => null,
+            'start_date' => '2026-08-01',
+            'generate_until' => '2026-08-03',
+        ]);
+
+        $payload = [
+            'selected_machine_ids' => [$this->machine->id],
+            'parts' => [
+                $this->machine->id => [
+                    ['id' => 'part-1', 'name' => 'Motor Drive', 'description' => 'Part tetap'],
+                ],
+            ],
+            'standards' => [
+                'part-1' => [
+                    [
+                        'name' => 'Cek suhu motor',
+                        'input_type' => 'number',
+                        'target_value' => 65,
+                        'unit' => 'Celcius',
+                        'is_required' => true,
+                        'is_active' => true,
+                    ],
+                ],
+            ],
+            'schedule' => [
+                'frequency_type' => 'daily',
+                'start_date' => '2026-08-01',
+                'generate_until' => '2026-08-03',
+                'weekly_days' => [],
+                'monthly_day' => null,
+            ],
+        ];
+
+        $this->actingAs($this->admin)->put("/pm/master-checksheet/{$checksheet->id}", [
+            'checksheet_code' => 'PM-CH-001',
+            'checksheet_name' => 'PM Mingguan Line 1 Revisi',
+            'description' => 'Updated',
+            'is_active' => '1',
+            'wizard_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+        ])->assertRedirect("/pm/master-checksheet/{$checksheet->id}");
+
+        $this->assertDatabaseHas('pm_executions', ['id' => $execution->id, 'status' => 'waiting_review']);
+        $this->assertDatabaseHas('pm_schedule_dates', ['id' => $scheduleDate->id, 'status' => 'waiting_review']);
+        $this->assertDatabaseHas('pm_schedule_dates', ['id' => $historicalScheduleDate->id]);
+        $this->assertDatabaseMissing('pm_schedule_dates', ['id' => $unworkedScheduleDate->id]);
+        $this->assertDatabaseHas('pm_schedule_dates', ['scheduled_date' => '2026-08-01 00:00:00', 'status' => 'scheduled', 'deleted_at' => null]);
+        $this->assertDatabaseHas('pm_schedule_dates', ['scheduled_date' => '2026-08-03 00:00:00', 'status' => 'scheduled']);
+
+        $scheduleDateRowsAfterFirstSave = PmScheduleDate::query()
+            ->withTrashed()
+            ->where('pm_schedule_id', $scheduleDate->pm_schedule_id)
+            ->orderBy('id')
+            ->get(['id', 'scheduled_date', 'status', 'deleted_at'])
+            ->map(fn (PmScheduleDate $date) => [
+                $date->id,
+                $date->scheduled_date->toDateString(),
+                $date->status,
+                $date->deleted_at?->toDateTimeString(),
+            ])
+            ->all();
+
+        $this->actingAs($this->admin)->put("/pm/master-checksheet/{$checksheet->id}", [
+            'checksheet_code' => 'PM-CH-001',
+            'checksheet_name' => 'PM Mingguan Line 1 Revisi',
+            'description' => 'Updated',
+            'is_active' => '1',
+            'wizard_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+        ])->assertRedirect("/pm/master-checksheet/{$checksheet->id}");
+
+        $this->assertSame($scheduleDateRowsAfterFirstSave, PmScheduleDate::query()
+            ->withTrashed()
+            ->where('pm_schedule_id', $scheduleDate->pm_schedule_id)
+            ->orderBy('id')
+            ->get(['id', 'scheduled_date', 'status', 'deleted_at'])
+            ->map(fn (PmScheduleDate $date) => [
+                $date->id,
+                $date->scheduled_date->toDateString(),
+                $date->status,
+                $date->deleted_at?->toDateTimeString(),
+            ])
+            ->all());
+        $this->actingAs($this->admin)->get('/pm/review')->assertOk()->assertSee('MC-01');
     }
 }
