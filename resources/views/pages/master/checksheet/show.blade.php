@@ -17,6 +17,14 @@
             </div>
         </div>
 
+        @if (session('flash_success'))
+            <x-ui.alert variant="success" title="Informasi">{{ session('flash_success') }}</x-ui.alert>
+        @endif
+
+        @if (session('flash_error'))
+            <x-ui.alert variant="error" title="Informasi">{{ session('flash_error') }}</x-ui.alert>
+        @endif
+
         <x-ui.card class="space-y-5">
             <h3 class="text-xl font-semibold">Informasi Mesin & Standard</h3>
             @foreach ($checksheet->machineAssignments as $assignment)
@@ -60,6 +68,65 @@
                 </div>
             @else
                 <p class="mt-3 text-sm text-[var(--color-prime-muted)]">Belum ada jadwal.</p>
+            @endif
+        </x-ui.card>
+
+        <x-ui.card class="space-y-5" title="Sinkronisasi Jadwal PM" subtitle="Preview ini tidak mengubah data. Terapkan hanya setelah seluruh perubahan ditinjau.">
+            <p class="text-sm leading-6 text-[var(--color-prime-muted)]">Tanggal berstatus proses, menunggu review, disetujui, atau yang memiliki riwayat eksekusi dilindungi dan tidak akan dihapus atau diubah.</p>
+
+            @if (! $checksheet->is_active)
+                <x-ui.alert variant="warning">Checksheet nonaktif tidak dapat disinkronkan.</x-ui.alert>
+            @elseif ($schedulePreview['selected'] === 0)
+                <x-ui.alert variant="warning">Tidak ada jadwal PM aktif untuk disinkronkan.</x-ui.alert>
+            @else
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div class="rounded-[var(--radius-card)] border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4"><p class="text-sm text-[var(--color-prime-muted)]">Dibuat</p><p class="mt-1 text-2xl font-semibold text-[var(--color-prime-ink)]">{{ $schedulePreview['totals']['created'] }}</p></div>
+                    <div class="rounded-[var(--radius-card)] border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4"><p class="text-sm text-[var(--color-prime-muted)]">Dipulihkan</p><p class="mt-1 text-2xl font-semibold text-[var(--color-prime-ink)]">{{ $schedulePreview['totals']['restored'] }}</p></div>
+                    <div class="rounded-[var(--radius-card)] border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4"><p class="text-sm text-[var(--color-prime-muted)]">Dihapus</p><p class="mt-1 text-2xl font-semibold text-[var(--color-prime-ink)]">{{ $schedulePreview['totals']['removed'] }}</p></div>
+                    <div class="rounded-[var(--radius-card)] border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4"><p class="text-sm text-[var(--color-prime-muted)]">Tidak berubah</p><p class="mt-1 text-2xl font-semibold text-[var(--color-prime-ink)]">{{ $schedulePreview['totals']['unchanged'] }}</p></div>
+                    <div class="rounded-[var(--radius-card)] border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4"><p class="text-sm text-[var(--color-prime-muted)]">Konflik terlindungi</p><p class="mt-1 text-2xl font-semibold text-[var(--color-prime-ink)]">{{ $schedulePreview['totals']['conflicts'] }}</p></div>
+                    <div class="rounded-[var(--radius-card)] border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4"><p class="text-sm text-[var(--color-prime-muted)]">Tanggal diperiksa</p><p class="mt-1 text-2xl font-semibold text-[var(--color-prime-ink)]">{{ $schedulePreview['totals']['examined'] }}</p></div>
+                    <div class="rounded-[var(--radius-card)] border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4"><p class="text-sm text-[var(--color-prime-muted)]">Jadwal diperiksa</p><p class="mt-1 text-2xl font-semibold text-[var(--color-prime-ink)]">{{ $schedulePreview['selected'] }}</p></div>
+                </div>
+
+                <div class="space-y-3">
+                    @foreach ($schedulePreview['schedules'] as $schedulePreviewRow)
+                        @php
+                            $previewSchedule = $schedulePreviewRow['schedule'];
+                            $previewMachine = $previewSchedule->checksheetMachine->machine;
+                            $previewResult = $schedulePreviewRow['result'];
+                        @endphp
+                        <div class="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-prime-border)] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p class="font-semibold text-[var(--color-prime-ink)]">{{ $previewMachine->machine_code }} - {{ $previewMachine->machine_name }}</p>
+                                <p class="mt-1 text-sm text-[var(--color-prime-muted)]">Jadwal #{{ $previewSchedule->id }}: {{ ucfirst($previewSchedule->frequency_type) }}</p>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <x-ui.badge variant="primary">+{{ $previewResult['created'] }} dibuat</x-ui.badge>
+                                <x-ui.badge variant="success">{{ $previewResult['restored'] }} dipulihkan</x-ui.badge>
+                                <x-ui.badge variant="warning">{{ $previewResult['removed'] }} dihapus</x-ui.badge>
+                                @if ($previewResult['conflicts'] > 0)
+                                    <x-ui.badge variant="danger">{{ $previewResult['conflicts'] }} konflik</x-ui.badge>
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+
+                @if ($schedulePreview['has_conflicts'])
+                    <x-ui.alert variant="error" title="Konflik jadwal ditemukan">Sinkronisasi tidak dapat diterapkan sampai seluruh tanggal terlindungi ditinjau.</x-ui.alert>
+                @elseif (! $schedulePreview['has_changes'])
+                    <x-ui.alert variant="info">Tidak ada perubahan jadwal yang dapat diterapkan.</x-ui.alert>
+                @else
+                    <form action="{{ route('master-checksheet.reconcile-schedule-dates', $checksheet->id) }}" method="POST" class="flex flex-col items-start gap-4 border-t border-[var(--color-prime-border)] pt-5">
+                        @csrf
+                        <label class="flex items-start gap-3 text-sm text-[var(--color-prime-muted)]">
+                            <input type="checkbox" name="confirmed" value="1" required class="mt-1 rounded border-[var(--color-prime-border)] text-[var(--color-prime-primary)] focus:ring-[var(--color-prime-primary)]">
+                            <span>Saya telah meninjau preview dan memahami perubahan akan diterapkan ke seluruh jadwal aktif checksheet ini.</span>
+                        </label>
+                        <x-ui.button type="submit">Terapkan Sinkronisasi</x-ui.button>
+                    </form>
+                @endif
             @endif
         </x-ui.card>
     </section>

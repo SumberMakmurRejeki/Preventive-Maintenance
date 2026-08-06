@@ -6,8 +6,6 @@ use App\Models\PmSchedule;
 use App\Services\PM\PmScheduleDateReconciler;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
-use RuntimeException;
 use Throwable;
 
 class ReconcilePmScheduleDatesCommand extends Command
@@ -55,7 +53,7 @@ class ReconcilePmScheduleDatesCommand extends Command
             try {
                 $result = $apply
                     ? $this->reconciler->reconcile($schedule)
-                    : $this->preview($schedule);
+                    : $this->reconciler->preview($schedule);
                 $record = [
                     'mode' => $apply ? 'apply' : 'dry-run',
                     'schedule_id' => $schedule->id,
@@ -104,20 +102,6 @@ class ReconcilePmScheduleDatesCommand extends Command
             ->orderBy('id');
     }
 
-    /** @return array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int} */
-    private function preview(PmSchedule $schedule): array
-    {
-        try {
-            DB::transaction(function () use ($schedule): void {
-                throw new DryRunRollback($this->reconciler->reconcile($schedule));
-            });
-        } catch (DryRunRollback $rollback) {
-            return $rollback->result;
-        }
-
-        throw new RuntimeException('Dry-run rollback did not execute.');
-    }
-
     /** @return list<int>|null */
     private function optionIds(string $name): ?array
     {
@@ -138,14 +122,5 @@ class ReconcilePmScheduleDatesCommand extends Command
         }
 
         return array_values(array_unique($ids));
-    }
-}
-
-class DryRunRollback extends RuntimeException
-{
-    /** @param array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int} $result */
-    public function __construct(public readonly array $result)
-    {
-        parent::__construct('Dry run complete.');
     }
 }

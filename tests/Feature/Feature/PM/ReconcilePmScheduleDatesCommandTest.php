@@ -118,14 +118,14 @@ class ReconcilePmScheduleDatesCommandTest extends TestCase
         $this->assertSame(4, PmScheduleDate::query()->where('pm_schedule_id', $schedule->id)->count());
     }
 
-    public function test_it_reports_conflicts_without_changing_protected_rows(): void
+    public function test_it_preserves_active_protected_desired_rows_without_conflicts(): void
     {
         $schedule = $this->createSchedule();
         $conflict = $this->createScheduleDate($schedule, '2026-08-07', 'waiting_review');
 
         $this->artisan('pm:reconcile-schedule-dates', ['--schedule-id' => [$schedule->id], '--apply' => true])
-            ->expectsOutputToContain('"conflicts":1')
-            ->assertExitCode(1);
+            ->expectsOutputToContain('"unchanged":1')
+            ->assertExitCode(0);
 
         $this->assertSame('waiting_review', $conflict->fresh()->status);
         $this->assertScheduleDates($schedule, $this->expectedDates());

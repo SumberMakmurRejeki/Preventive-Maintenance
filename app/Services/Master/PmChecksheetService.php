@@ -9,6 +9,8 @@ use App\Models\PmChecksheetStandard;
 use App\Models\PmSchedule;
 use App\Services\Auth\ActivityLogService;
 use App\Services\PM\PmScheduleDateReconciler;
+use DomainException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -128,6 +130,89 @@ class PmChecksheetService
             recordId: $checksheetId,
             oldValues: $oldValues,
         );
+    }
+
+    /**
+     * @return array{selected: int, schedules: list<array{schedule: PmSchedule, result: array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int}}>, totals: array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int}, has_conflicts: bool, has_changes: bool}
+     */
+    public function previewScheduleDates(PmChecksheet $checksheet): array
+    {
+        return $this->aggregateSchedulePreviews($this->activeSchedulesFor($checksheet->id)->get());
+    }
+
+    /**
+     * @return array{selected: int, schedules: list<array{schedule: PmSchedule, result: array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int}}>, totals: array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int}, has_conflicts: bool, has_changes: bool}
+     */
+    public function reconcileScheduleDates(Request $request, PmChecksheet $checksheet): array
+    {
+        return DB::transaction(function () use ($request, $checksheet): array {
+            $lockedChecksheet = PmChecksheet::query()
+                ->lockForUpdate()
+                ->findOrFail($checksheet->id);
+
+            if (! $lockedChecksheet->is_active) {
+                throw new DomainException('Checksheet nonaktif tidak dapat disinkronkan.');
+            }
+
+            $schedules = $this->activeSchedulesFor($lockedChecksheet->id)
+                ->lockForUpdate()
+                ->get();
+
+            if ($schedules->isEmpty()) {
+                throw new DomainException('Tidak ada jadwal PM aktif untuk disinkronkan.');
+            }
+
+            $preview = $this->aggregateSchedulePreviews($schedules);
+
+            if ($preview['has_conflicts']) {
+                throw new DomainException('Sinkronisasi dibatalkan karena terdapat konflik pada tanggal yang sudah terlindungi.');
+            }
+
+            if (! $preview['has_changes']) {
+                throw new DomainException('Tidak ada perubahan jadwal yang dapat diterapkan.');
+            }
+
+            $actualTotals = [
+                'examined' => 0,
+                'created' => 0,
+                'restored' => 0,
+                'removed' => 0,
+                'unchanged' => 0,
+                'conflicts' => 0,
+            ];
+
+            foreach ($schedules as $schedule) {
+                $result = $this->scheduleDateReconciler->reconcile($schedule);
+
+                foreach ($actualTotals as $counter => $total) {
+                    $actualTotals[$counter] = $total + $result[$counter];
+                }
+            }
+
+            if ($actualTotals['conflicts'] > 0) {
+                throw new DomainException('Sinkronisasi dibatalkan karena terjadi konflik saat penerapan perubahan.');
+            }
+
+            $this->activityLog->log(
+                request: $request,
+                moduleName: 'master_checksheet',
+                action: 'reconcile_schedule_dates',
+                description: sprintf('Reconcile schedule dates for checksheet %s', $lockedChecksheet->checksheet_code),
+                tableName: 'pm_checksheets',
+                recordId: $lockedChecksheet->id,
+                newValues: [
+                    'selected' => $preview['selected'],
+                    ...$actualTotals,
+                ],
+            );
+
+            return [
+                ...$preview,
+                'totals' => $actualTotals,
+                'has_conflicts' => false,
+                'has_changes' => $actualTotals['created'] + $actualTotals['restored'] + $actualTotals['removed'] > 0,
+            ];
+        });
     }
 
     public function toWizardPayload(PmChecksheet $checksheet): array
@@ -258,5 +343,53 @@ class PmChecksheetService
 
             $this->scheduleDateReconciler->reconcile($scheduleModel);
         }
+    }
+
+    /** @return Builder<PmSchedule> */
+    private function activeSchedulesFor(int $checksheetId): Builder
+    {
+        return PmSchedule::query()
+            ->active()
+            ->whereHas('checksheetMachine', fn (Builder $query) => $query->where('pm_checksheet_id', $checksheetId))
+            ->with('checksheetMachine.machine')
+            ->orderBy('id');
+    }
+
+    /**
+     * @param  iterable<PmSchedule>  $schedules
+     * @return array{selected: int, schedules: list<array{schedule: PmSchedule, result: array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int}}>, totals: array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int}, has_conflicts: bool, has_changes: bool}
+     */
+    private function aggregateSchedulePreviews(iterable $schedules): array
+    {
+        $totals = [
+            'examined' => 0,
+            'created' => 0,
+            'restored' => 0,
+            'removed' => 0,
+            'unchanged' => 0,
+            'conflicts' => 0,
+        ];
+        $rows = [];
+
+        foreach ($schedules as $schedule) {
+            $result = $this->scheduleDateReconciler->preview($schedule);
+
+            foreach ($totals as $counter => $total) {
+                $totals[$counter] = $total + $result[$counter];
+            }
+
+            $rows[] = [
+                'schedule' => $schedule,
+                'result' => $result,
+            ];
+        }
+
+        return [
+            'selected' => count($rows),
+            'schedules' => $rows,
+            'totals' => $totals,
+            'has_conflicts' => $totals['conflicts'] > 0,
+            'has_changes' => $totals['created'] + $totals['restored'] + $totals['removed'] > 0,
+        ];
     }
 }

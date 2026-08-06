@@ -111,6 +111,27 @@ class PmScheduleDateReconcilerTest extends TestCase
         $this->assertSame($beforeSecondRun, $this->dateTimestamps());
     }
 
+    public function test_preview_is_non_mutating_and_matches_reconcile_counts(): void
+    {
+        $this->createScheduleDate('2026-05-01', 'overdue');
+        $desired = $this->createScheduleDate('2026-08-07', 'missed');
+        $desired->delete();
+        $beforePreview = $this->dateTimestamps();
+
+        $preview = $this->reconciler()->preview($this->schedule);
+
+        $this->assertSame([
+            'examined' => 2,
+            'created' => 3,
+            'restored' => 1,
+            'removed' => 1,
+            'unchanged' => 0,
+            'conflicts' => 0,
+        ], $preview);
+        $this->assertSame($beforePreview, $this->dateTimestamps());
+        $this->assertSame($preview, $this->reconciler()->reconcile($this->schedule));
+    }
+
     public function test_it_restores_a_mutable_soft_deleted_desired_row_without_duplication(): void
     {
         $desired = $this->createScheduleDate('2026-08-07', 'missed', [
@@ -141,7 +162,7 @@ class PmScheduleDateReconcilerTest extends TestCase
         $this->assertSame($this->expectedDates(), $this->visibleAugustDates());
     }
 
-    public function test_it_reports_and_preserves_protected_desired_date_conflicts(): void
+    public function test_it_preserves_active_protected_desired_dates_as_unchanged(): void
     {
         $statusConflict = $this->createScheduleDate('2026-08-07', 'waiting_review', [
             'status_changed_at' => '2026-08-07 12:00:00',
@@ -160,13 +181,33 @@ class PmScheduleDateReconcilerTest extends TestCase
             'created' => 2,
             'restored' => 0,
             'removed' => 0,
-            'unchanged' => 0,
-            'conflicts' => 2,
+            'unchanged' => 2,
+            'conflicts' => 0,
         ], $result);
         $this->assertSame($statusConflictBefore, $this->protectedSnapshot($statusConflict->fresh()));
         $this->assertSame($executionConflictBefore, $this->protectedSnapshot($executionConflict->fresh()));
         $this->assertNotNull(PmExecution::withTrashed()->find($deletedExecution->id));
         $this->assertSame($this->expectedDates(), $this->visibleAugustDates());
+    }
+
+    public function test_it_reports_a_soft_deleted_protected_desired_date_as_a_conflict(): void
+    {
+        $protected = $this->createScheduleDate('2026-08-07', 'waiting_review');
+        $protected->delete();
+
+        $result = $this->reconciler()->reconcile($this->schedule);
+
+        $this->assertSame([
+            'examined' => 1,
+            'created' => 3,
+            'restored' => 0,
+            'removed' => 0,
+            'unchanged' => 0,
+            'conflicts' => 1,
+        ], $result);
+        $this->assertSame('waiting_review', PmScheduleDate::withTrashed()->findOrFail($protected->id)->status);
+        $this->assertTrue(PmScheduleDate::withTrashed()->findOrFail($protected->id)->trashed());
+        $this->assertSame(['2026-08-14', '2026-08-21', '2026-08-28'], $this->visibleAugustDates());
     }
 
     public function test_it_rolls_back_stale_removal_when_date_creation_fails(): void

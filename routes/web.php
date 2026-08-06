@@ -117,6 +117,7 @@ Route::middleware(['prime.auth', 'prime.operator.session'])->group(function (): 
         Route::get('/', [MasterPmChecksheetController::class, 'index'])->name('master-checksheet.index');
         Route::get('/create', [MasterPmChecksheetController::class, 'create'])->name('master-checksheet.create');
         Route::post('/', [MasterPmChecksheetController::class, 'store'])->name('master-checksheet.store');
+        Route::post('/{id}/reconcile-schedule-dates', [MasterPmChecksheetController::class, 'reconcileScheduleDates'])->name('master-checksheet.reconcile-schedule-dates');
         Route::get('/{id}', [MasterPmChecksheetController::class, 'show'])->name('master-checksheet.show');
         Route::get('/{id}/edit', [MasterPmChecksheetController::class, 'edit'])->name('master-checksheet.edit');
         Route::put('/{id}', [MasterPmChecksheetController::class, 'update'])->name('master-checksheet.update');

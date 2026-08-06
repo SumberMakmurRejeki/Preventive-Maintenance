@@ -10,17 +10,18 @@ use App\Models\Machine;
 use App\Models\PmChecksheet;
 use App\Services\Auth\PrimeAuthService;
 use App\Services\Master\PmChecksheetService;
+use DomainException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Throwable;
 
 class MasterPmChecksheetController extends Controller
 {
     public function __construct(
         protected PmChecksheetService $checksheetService,
         protected PrimeAuthService $primeAuth,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
@@ -98,7 +99,32 @@ class MasterPmChecksheetController extends Controller
             'actorName' => $this->primeAuth->name($request),
             'role' => $this->primeAuth->role($request),
             'checksheet' => $checksheet,
+            'schedulePreview' => $this->checksheetService->previewScheduleDates($checksheet),
         ]);
+    }
+
+    public function reconcileScheduleDates(Request $request, int $checksheetId): RedirectResponse
+    {
+        $request->validate([
+            'confirmed' => ['accepted'],
+        ]);
+        $checksheet = $this->findChecksheet($checksheetId);
+
+        try {
+            $this->checksheetService->reconcileScheduleDates($request, $checksheet);
+        } catch (DomainException $exception) {
+            return redirect()
+                ->route('master-checksheet.show', $checksheet->id)
+                ->with('flash_error', $exception->getMessage());
+        } catch (Throwable) {
+            return redirect()
+                ->route('master-checksheet.show', $checksheet->id)
+                ->with('flash_error', 'Terjadi kesalahan saat menerapkan sinkronisasi jadwal PM. Silakan coba lagi.');
+        }
+
+        return redirect()
+            ->route('master-checksheet.show', $checksheet->id)
+            ->with('flash_success', 'Sinkronisasi jadwal PM berhasil diterapkan.');
     }
 
     public function edit(Request $request, int $checksheetId): View
