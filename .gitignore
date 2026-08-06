@@ -21,11 +21,5 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
-.agents/
-.ai/
-.codex/
-01. dokumen/
-AGENTS.md
-boost.json
-gcm-diagnose.log
-skills-lock.json
+/.omo
+/test-results
