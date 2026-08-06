@@ -110,6 +110,7 @@ That command runs:
 - Laravel development server
 - queue listener
 - log viewer
+- scheduler worker
 - Vite development server
 
 If you prefer to run services manually:
@@ -117,6 +118,7 @@ If you prefer to run services manually:
 ```bash
 php artisan serve
 php artisan queue:listen --tries=1
+php artisan schedule:work
 npm run dev
 ```
 
@@ -128,7 +130,8 @@ This project includes a scheduled command to keep PM schedule statuses in sync:
 php artisan pm:sync-schedule-status
 ```
 
-For production, make sure Laravel Scheduler is configured on the server.
+Local development needs the scheduler worker (`php artisan schedule:work`) so scheduled commands run automatically.
+For production, run `php artisan schedule:run` every minute from the server's scheduler (for example, with cron).
 
 ## Reports
 
