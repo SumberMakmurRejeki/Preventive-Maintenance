@@ -14,6 +14,8 @@ use App\Models\PmExecutionMedia;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Models\User;
+use App\Services\PM\PmExecutionService;
+use App\Services\PM\PmScheduleDateReconciler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
@@ -179,6 +181,92 @@ class PmExecutorTest extends TestCase
         $response = $this->actingAs($this->operator)->get("/pm/executor/{$this->machine->machine_code}");
 
         $response->assertRedirect("/machines/{$this->machine->machine_code}");
+    }
+
+    public function test_executor_prefers_reconciled_august_dates_and_keeps_in_progress_precedence(): void
+    {
+        $location = Location::query()->create([
+            'location_code' => 'LOC-UC-018',
+            'location_name' => 'Upcast 18',
+            'is_active' => true,
+        ]);
+
+        $machine = Machine::query()->create([
+            'location_id' => $location->id,
+            'machine_code' => 'UC-018',
+            'machine_name' => 'REPAIR LINE 18',
+            'qr_token' => 'qr-uc-018',
+            'is_active' => true,
+        ]);
+
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-CH-UC-018',
+            'checksheet_name' => 'Checksheet UC-018',
+            'is_active' => true,
+            'created_by' => $this->admin->id,
+        ]);
+
+        $assignment = PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $machine->id,
+            'created_by' => $this->admin->id,
+        ]);
+
+        $schedule = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => $assignment->id,
+            'frequency_type' => 'weekly',
+            'weekly_days' => [5],
+            'start_date' => '2026-08-01',
+            'generate_until' => '2026-08-31',
+            'is_active' => true,
+            'created_by' => $this->admin->id,
+        ]);
+
+        foreach (['2026-06-06', '2026-06-13'] as $date) {
+            PmScheduleDate::query()->create([
+                'pm_schedule_id' => $schedule->id,
+                'machine_id' => $machine->id,
+                'scheduled_date' => $date,
+                'status' => 'scheduled',
+            ]);
+        }
+
+        foreach (['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28'] as $date) {
+            PmScheduleDate::query()->create([
+                'pm_schedule_id' => $schedule->id,
+                'machine_id' => $machine->id,
+                'scheduled_date' => $date,
+                'status' => 'scheduled',
+            ]);
+        }
+
+        $reconciler = app(PmScheduleDateReconciler::class);
+        $result = $reconciler->reconcile($schedule);
+
+        $this->assertSame(2, $result['removed']);
+        $this->assertDatabaseMissing('pm_schedule_dates', [
+            'pm_schedule_id' => $schedule->id,
+            'machine_id' => $machine->id,
+            'scheduled_date' => '2026-06-06',
+        ]);
+
+        $service = app(PmExecutionService::class);
+        $selected = $service->findScheduleDateForExecutor($machine);
+
+        $this->assertSame('2026-08-07', $selected->scheduled_date->toDateString());
+        $this->assertSame('scheduled', $selected->status);
+
+        $historicalInProgress = PmScheduleDate::query()->create([
+            'pm_schedule_id' => $schedule->id,
+            'machine_id' => $machine->id,
+            'scheduled_date' => '2026-06-20',
+            'status' => 'in_progress',
+        ]);
+
+        $selected = $service->findScheduleDateForExecutor($machine);
+
+        $this->assertSame($historicalInProgress->id, $selected->id);
+        $this->assertSame('2026-06-20', $selected->scheduled_date->toDateString());
     }
 
     public function test_start_pm_creates_in_progress_execution_and_items(): void
