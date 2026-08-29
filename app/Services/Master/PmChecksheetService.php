@@ -8,7 +8,10 @@ use App\Models\PmChecksheetPart;
 use App\Models\PmChecksheetStandard;
 use App\Models\PmSchedule;
 use App\Services\Auth\ActivityLogService;
+use App\Services\PM\BusinessDate;
+use App\Services\PM\PlanningPeriodPolicy;
 use App\Services\PM\PmScheduleDateReconciler;
+use Carbon\Carbon;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -19,6 +22,7 @@ class PmChecksheetService
     public function __construct(
         protected ActivityLogService $activityLog,
         protected PmScheduleDateReconciler $scheduleDateReconciler,
+        protected PlanningPeriodPolicy $planningPeriodPolicy,
     ) {}
 
     public function create(Request $request, array $payload): PmChecksheet
@@ -164,6 +168,11 @@ class PmChecksheetService
 
             $preview = $this->aggregateSchedulePreviews($schedules);
 
+            // Cek unresolved schedule sebelum has_conflicts/has_changes
+            if ($preview['unresolved'] ?? false) {
+                throw new DomainException('Terdapat jadwal dengan tanggal operasional yang belum ditetapkan. Silakan tetapkan tanggal operasional terlebih dahulu.');
+            }
+
             if ($preview['has_conflicts']) {
                 throw new DomainException('Sinkronisasi dibatalkan karena terdapat konflik pada tanggal yang sudah terlindungi.');
             }
@@ -259,6 +268,7 @@ class PmChecksheetService
                         'frequency_type' => $assignmentSchedule->frequency_type,
                         'weekly_days' => $assignmentSchedule->weekly_days ?? [],
                         'monthly_day' => $assignmentSchedule->monthly_day,
+                        'operational_from' => optional($assignmentSchedule->operational_from)->toDateString(),
                         'start_date' => optional($assignmentSchedule->start_date)->toDateString(),
                         'generate_until' => optional($assignmentSchedule->generate_until)->toDateString(),
                     ];
@@ -328,14 +338,27 @@ class PmChecksheetService
                 }
             }
 
+            $existingSchedule = PmSchedule::query()
+                ->where('pm_checksheet_machine_id', $assignment->id)
+                ->first();
+
+            // Tentukan jendela operasional:
+            // - Jika payload membawa operational_from (jalur baru) -> hitung
+            //   start_date (batas operasional) dan generate_until (akhir window).
+            // - Jika kosong (jalur legacy) -> pertahankan nilai start_date /
+            //   generate_until dari jadwal lama, dengan cadangan terakhir ke
+            //   kunci legacy payload untuk jadwal yang baru dibuat.
+            $window = $this->resolveScheduleWindow($existingSchedule, $schedule);
+
             $scheduleModel = PmSchedule::query()->updateOrCreate(
                 ['pm_checksheet_machine_id' => $assignment->id],
                 [
                     'frequency_type' => $schedule['frequency_type'],
                     'weekly_days' => $schedule['frequency_type'] === 'weekly' ? array_values($schedule['weekly_days']) : null,
                     'monthly_day' => $schedule['frequency_type'] === 'monthly' ? $schedule['monthly_day'] : null,
-                    'start_date' => $schedule['start_date'],
-                    'generate_until' => $schedule['generate_until'],
+                    'operational_from' => $window['operational_from'],
+                    'start_date' => $window['start_date'],
+                    'generate_until' => $window['generate_until'],
                     'is_active' => true,
                     'created_by' => $request->user()?->id,
                 ],
@@ -343,6 +366,47 @@ class PmChecksheetService
 
             $this->scheduleDateReconciler->reconcile($scheduleModel);
         }
+    }
+
+    /**
+     * Hitung jendela operasional untuk satu jadwal.
+     *
+     * @param  array<string, mixed>  $schedule
+     * @return array{operational_from: string|null, start_date: string|null, generate_until: string|null}
+     */
+    protected function resolveScheduleWindow(?PmSchedule $existingSchedule, array $schedule): array
+    {
+        $operationalFrom = $schedule['operational_from'] ?? null;
+
+        if (! empty($operationalFrom)) {
+            $operationalFromDate = Carbon::parse($operationalFrom)->startOfDay();
+            $businessToday = BusinessDate::today();
+
+            // planning_start = max(business_today, operational_from);
+            // planning_end   = planning_start + initialMonths (no-overflow);
+            // generate_until = planning_end (inklusif), dihitung backend-side.
+            $window = $this->planningPeriodPolicy->planningWindow($businessToday, $operationalFromDate);
+
+            // start_date (batas operasional) HARUS sama dengan operational_from,
+            // bukan planning_start. planning_start = max(business_today,
+            // operational_from) hanya menjadi batas bawah GENERATION (mengisi
+            // generate_until), bukan nilai yang dipersist pada start_date.
+            // Dengan ini, pada jalur update dengan operational_from di masa lalu,
+            // start_date tetap mengikuti operational_from (kontrak TASK-002).
+            return [
+                'operational_from' => $operationalFromDate->toDateString(),
+                'start_date' => $operationalFromDate->toDateString(),
+                'generate_until' => $window['planning_end']->toDateString(),
+            ];
+        }
+
+        // Jalur legacy: pertahankan nilai jadwal lama, atau fallback ke kunci
+        // legacy payload saat membuat jadwal baru (kompatibilitas defensif).
+        return [
+            'operational_from' => $existingSchedule?->operational_from?->toDateString(),
+            'start_date' => $existingSchedule?->start_date?->toDateString() ?? $schedule['start_date'] ?? null,
+            'generate_until' => $existingSchedule?->generate_until?->toDateString() ?? $schedule['generate_until'] ?? null,
+        ];
     }
 
     /** @return Builder<PmSchedule> */
@@ -370,11 +434,16 @@ class PmChecksheetService
             'conflicts' => 0,
         ];
         $rows = [];
+        $hasUnresolved = false;
 
         foreach ($schedules as $schedule) {
             $result = $this->scheduleDateReconciler->preview($schedule);
+            $hasUnresolved = $hasUnresolved
+                || $schedule->operational_from === null
+                || ($result['unresolved'] ?? false);
 
             foreach ($totals as $counter => $total) {
+
                 $totals[$counter] = $total + $result[$counter];
             }
 
@@ -384,12 +453,14 @@ class PmChecksheetService
             ];
         }
 
-        return [
+        $result = [
             'selected' => count($rows),
             'schedules' => $rows,
             'totals' => $totals,
             'has_conflicts' => $totals['conflicts'] > 0,
             'has_changes' => $totals['created'] + $totals['restored'] + $totals['removed'] > 0,
         ];
+
+        return $hasUnresolved ? [...$result, 'unresolved' => true] : $result;
     }
 }

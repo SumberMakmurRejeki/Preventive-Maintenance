@@ -48,8 +48,16 @@ class ReconcilePmScheduleDatesCommand extends Command
         $schedules = $this->schedules($scheduleIds, $checksheetIds)->get();
         $apply = (bool) $this->option('apply');
         $hasProblem = false;
+        $unresolved = 0;
 
         foreach ($schedules as $schedule) {
+            // Legacy schedule tanpa operational_from dilewati tanpa mutasi.
+            if ($schedule->operational_from === null) {
+                $unresolved++;
+                $this->warn(sprintf('SKIP unresolved schedule_id=%d: operational_from NULL.', $schedule->id));
+
+                continue;
+            }
             try {
                 $result = $apply
                     ? $this->reconciler->reconcile($schedule)
@@ -79,6 +87,7 @@ class ReconcilePmScheduleDatesCommand extends Command
         $this->line((string) json_encode([
             'mode' => $apply ? 'apply' : 'dry-run',
             'selected' => $schedules->count(),
+            'unresolved' => $unresolved,
             'status' => $hasProblem ? 'failed' : 'ok',
         ], JSON_THROW_ON_ERROR));
 

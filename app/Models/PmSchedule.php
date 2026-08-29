@@ -19,6 +19,7 @@ class PmSchedule extends Model
         'frequency_type',
         'weekly_days',
         'monthly_day',
+        'operational_from',
         'start_date',
         'generate_until',
         'is_active',
@@ -30,6 +31,7 @@ class PmSchedule extends Model
         return [
             'weekly_days' => 'array',
             'monthly_day' => 'integer',
+            'operational_from' => 'date',
             'start_date' => 'date',
             'generate_until' => 'date',
             'is_active' => 'boolean',

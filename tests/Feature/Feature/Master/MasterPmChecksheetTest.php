@@ -9,6 +9,7 @@ use App\Models\PmChecksheet;
 use App\Models\PmExecution;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
+use Carbon\Carbon;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -59,6 +60,12 @@ class MasterPmChecksheetTest extends TestCase
         ]);
     }
 
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     public function test_admin_can_access_master_checksheet_pages(): void
     {
         $this->actingAs($this->admin)->get('/pm/master-checksheet')->assertOk()->assertSee('Master PM Checksheet');
@@ -83,6 +90,8 @@ class MasterPmChecksheetTest extends TestCase
 
     public function test_admin_can_create_checksheet_with_nested_data(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
         $payload = [
             'selected_machine_ids' => [$this->machine->id],
             'parts' => [
@@ -104,8 +113,7 @@ class MasterPmChecksheetTest extends TestCase
             ],
             'schedule' => [
                 'frequency_type' => 'daily',
-                'start_date' => '2026-05-21',
-                'generate_until' => '2026-05-25',
+                'operational_from' => '2026-05-21',
                 'weekly_days' => [],
                 'monthly_day' => null,
             ],
@@ -197,6 +205,16 @@ class MasterPmChecksheetTest extends TestCase
         $unworkedScheduleDate = PmScheduleDate::query()
             ->whereKeyNot([$scheduleDate->id, $historicalScheduleDate->id])
             ->firstOrFail();
+
+        // Create kini menghasilkan jendela penuh 12 bulan (hingga 2027-05-21),
+        // sehingga tanggal Agustus 2026 sudah ter-generate dan belum dikerjakan.
+        // Bersihkan dahulu agar skenario di bawah (jadwal harian 1-3 Agustus)
+        // tidak bentrok dengan baris aktif bawaan hasil create.
+        PmScheduleDate::query()
+            ->where('pm_schedule_id', $scheduleDate->pm_schedule_id)
+            ->whereBetween('scheduled_date', ['2026-08-01 00:00:00', '2026-08-31 23:59:59'])
+            ->forceDelete();
+
         $scheduleDate->forceFill(['status' => 'waiting_review'])->save();
 
         $execution = PmExecution::query()->create([

@@ -55,9 +55,10 @@ class PmScheduleDateReconcilerTest extends TestCase
         $this->schedule = PmSchedule::query()->create([
             'pm_checksheet_machine_id' => $assignment->id,
             'frequency_type' => 'weekly',
+            'operational_from' => '2026-08-01',
             'weekly_days' => [5],
             'start_date' => '2026-08-01',
-            'generate_until' => '2026-08-31',
+            'generate_until' => '2026-09-01',
             'is_active' => true,
         ]);
     }
@@ -230,6 +231,29 @@ class PmScheduleDateReconcilerTest extends TestCase
 
         $this->assertNotNull(PmScheduleDate::query()->find($stale->id));
         $this->assertSame([], $this->visibleAugustDates());
+    public function test_unresolved_schedule_preview_and_reconcile_skip_without_mutation(): void
+    {
+        $existing = $this->createScheduleDate('2026-08-07');
+        $this->schedule->update(['operational_from' => null]);
+
+        $preview = $this->reconciler()->preview($this->schedule->fresh());
+        $this->assertSame([
+            'examined' => 0,
+            'created' => 0,
+            'restored' => 0,
+            'removed' => 0,
+            'unchanged' => 0,
+            'conflicts' => 0,
+            'unresolved' => true,
+        ], $preview);
+
+        $result = $this->reconciler()->reconcile($this->schedule->fresh());
+
+        $this->assertSame($preview, $result);
+        $this->assertNotNull(PmScheduleDate::query()->find($existing->id));
+        $this->assertSame(1, PmScheduleDate::query()->count());
+    }
+
     }
 
     private function reconciler(): PmScheduleDateReconciler
@@ -292,10 +316,11 @@ class PmScheduleDateReconcilerTest extends TestCase
 
     private function protectedSnapshot(PmScheduleDate $date): array
     {
+        // Normalisasi tanggal kalender agar assertion tidak bergantung pada format driver database.
         return [
             'id' => $date->getRawOriginal('id'),
             'machine_id' => $date->getRawOriginal('machine_id'),
-            'scheduled_date' => $date->getRawOriginal('scheduled_date'),
+            'scheduled_date' => $date->scheduled_date->toDateString(),
             'status' => $date->getRawOriginal('status'),
             'status_changed_at' => $date->getRawOriginal('status_changed_at'),
             'generated_at' => $date->getRawOriginal('generated_at'),

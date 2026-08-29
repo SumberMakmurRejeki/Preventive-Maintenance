@@ -63,7 +63,7 @@
                 <div class="mt-4 grid gap-4 md:grid-cols-4 text-sm">
                     <div><p class="text-[var(--color-prime-muted)]">Frekuensi</p><p class="font-semibold">{{ ucfirst($schedule->frequency_type) }}</p></div>
                     <div><p class="text-[var(--color-prime-muted)]">Waktu</p><p class="font-semibold">{{ $schedule->frequency_type === 'weekly' ? implode(', ', $schedule->weekly_days ?? []) : ($schedule->frequency_type === 'monthly' ? 'Tanggal '.$schedule->monthly_day : 'Setiap hari') }}</p></div>
-                    <div><p class="text-[var(--color-prime-muted)]">Mulai Generate</p><p class="font-semibold">{{ optional($schedule->start_date)->format('Y-m-d') }}</p></div>
+                    <div><p class="text-[var(--color-prime-muted)]">{{ $schedule->operational_from === null ? 'Operational window' : 'Mulai Generate' }}</p><p class="font-semibold">{{ $schedule->operational_from === null ? 'Operational window belum ditentukan (legacy)' : optional($schedule->start_date)->format('Y-m-d') }}</p></div>
                     <div><p class="text-[var(--color-prime-muted)]">Berakhir Pada</p><p class="font-semibold">{{ optional($schedule->generate_until)->format('Y-m-d') }}</p></div>
                 </div>
             @else
@@ -113,7 +113,9 @@
                     @endforeach
                 </div>
 
-                @if ($schedulePreview['has_conflicts'])
+                @if ($schedulePreview['unresolved'] ?? false)
+                    <x-ui.alert variant="warning" title="Jadwal belum siap disinkronkan">Terdapat jadwal dengan tanggal operasional yang belum ditetapkan. Silakan tetapkan tanggal operasional terlebih dahulu melalui menu edit.</x-ui.alert>
+                @elseif ($schedulePreview['has_conflicts'])
                     <x-ui.alert variant="error" title="Konflik jadwal ditemukan">Sinkronisasi tidak dapat diterapkan sampai seluruh tanggal terlindungi ditinjau.</x-ui.alert>
                 @elseif (! $schedulePreview['has_changes'])
                     <x-ui.alert variant="info">Tidak ada perubahan jadwal yang dapat diterapkan.</x-ui.alert>

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Master;
 
+use App\Services\PM\BusinessDate;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -31,6 +32,9 @@ class StorePmChecksheetRequest extends FormRequest
             'parts' => $payload['parts'] ?? [],
             'standards' => $payload['standards'] ?? [],
             'schedule' => $payload['schedule'] ?? [],
+            'business_date' => [
+                'today' => BusinessDate::today()->toDateString(),
+            ],
         ]);
     }
 
@@ -52,8 +56,9 @@ class StorePmChecksheetRequest extends FormRequest
             'standards' => ['required', 'array'],
             'schedule' => ['required', 'array'],
             'schedule.frequency_type' => ['required', Rule::in(['daily', 'weekly', 'monthly'])],
-            'schedule.start_date' => ['required', 'date'],
-            'schedule.generate_until' => ['required', 'date', 'after_or_equal:schedule.start_date'],
+            'schedule.operational_from' => ['required', 'date', 'after_or_equal:business_date.today'],
+            'schedule.start_date' => ['nullable', 'date'],
+            'schedule.generate_until' => ['nullable', 'date'],
             'schedule.weekly_days' => ['nullable', 'array'],
             'schedule.weekly_days.*' => ['integer', 'between:0,6', 'distinct:strict'],
             'schedule.monthly_day' => ['nullable', 'integer', 'between:1,31'],
@@ -74,6 +79,7 @@ class StorePmChecksheetRequest extends FormRequest
 
                     if (! is_array($machineParts) || count($machineParts) < 1) {
                         $validator->errors()->add('wizard_payload', "Mesin {$machineId} wajib memiliki minimal 1 part.");
+
                         continue;
                     }
 
@@ -97,6 +103,7 @@ class StorePmChecksheetRequest extends FormRequest
 
                         if (! is_array($partStandards) || count($partStandards) < 1) {
                             $validator->errors()->add('wizard_payload', "Part {$partName} wajib memiliki minimal 1 standard.");
+
                             continue;
                         }
 
@@ -157,6 +164,8 @@ class StorePmChecksheetRequest extends FormRequest
             'selected_machine_ids.required' => 'Minimal pilih 1 mesin.',
             'selected_machine_ids.*.exists' => 'Mesin tidak valid atau sudah nonaktif.',
             'schedule.frequency_type.required' => 'Frekuensi jadwal wajib diisi.',
+            'schedule.operational_from.required' => 'Tanggal mulai jadwal PRIME wajib diisi.',
+            'schedule.operational_from.after_or_equal' => 'Tanggal mulai jadwal PRIME tidak boleh sebelum tanggal bisnis hari ini.',
         ];
     }
 }

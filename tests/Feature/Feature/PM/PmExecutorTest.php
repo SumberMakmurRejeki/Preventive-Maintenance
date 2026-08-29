@@ -216,8 +216,9 @@ class PmExecutorTest extends TestCase
             'pm_checksheet_machine_id' => $assignment->id,
             'frequency_type' => 'weekly',
             'weekly_days' => [5],
+            'operational_from' => '2026-08-01',
             'start_date' => '2026-08-01',
-            'generate_until' => '2026-08-31',
+            'generate_until' => '2026-09-01',
             'is_active' => true,
             'created_by' => $this->admin->id,
         ]);

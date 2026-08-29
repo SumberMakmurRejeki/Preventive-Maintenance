@@ -154,6 +154,31 @@ class ReconcilePmScheduleDatesCommandTest extends TestCase
         $this->assertScheduleDates($succeeding, $this->expectedDates());
     }
 
+    public function test_unresolved_schedule_is_reported_and_not_mutated_in_dry_run_and_apply(): void
+    {
+        $schedule = $this->createSchedule();
+        $schedule->update(['operational_from' => null]);
+        $existing = $this->createScheduleDate($schedule, '2026-08-07');
+
+        $this->artisan('pm:reconcile-schedule-dates', [
+            '--schedule-id' => [$schedule->id],
+        ])
+            ->expectsOutputToContain('SKIP unresolved schedule_id='.$schedule->id)
+            ->expectsOutputToContain('"unresolved":1')
+            ->assertExitCode(0);
+
+        $this->artisan('pm:reconcile-schedule-dates', [
+            '--schedule-id' => [$schedule->id],
+            '--apply' => true,
+        ])
+            ->expectsOutputToContain('SKIP unresolved schedule_id='.$schedule->id)
+            ->expectsOutputToContain('"unresolved":1')
+            ->assertExitCode(0);
+
+        $this->assertNotNull(PmScheduleDate::query()->find($existing->id));
+        $this->assertSame(1, PmScheduleDate::query()->count());
+    }
+
     private function createSchedule(?PmChecksheet $checksheet = null): PmSchedule
     {
         $checksheet ??= $this->createChecksheet('PM-'.(PmChecksheet::query()->count() + 1));
@@ -179,8 +204,9 @@ class ReconcilePmScheduleDatesCommandTest extends TestCase
             'pm_checksheet_machine_id' => $assignment->id,
             'frequency_type' => 'weekly',
             'weekly_days' => [5],
+            'operational_from' => '2026-08-01',
             'start_date' => '2026-08-01',
-            'generate_until' => '2026-08-31',
+            'generate_until' => '2026-09-01',
             'is_active' => true,
         ]);
     }

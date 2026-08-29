@@ -9,13 +9,20 @@ use Illuminate\Support\Facades\DB;
 
 class PmScheduleDateReconciler
 {
-    private const MUTABLE_STATUSES = ['scheduled', 'overdue', 'missed'];
+    // Status occurrence yang boleh direconcile. Sumber tunggal untuk
+    // klasifikasi protected/mutable pada reconciliation dan preview.
+    public const MUTABLE_STATUSES = ['scheduled', 'overdue', 'missed'];
 
     /**
-     * @return array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int}
+     * @return array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int, unresolved?: bool}
      */
     public function reconcile(PmSchedule $schedule): array
     {
+        // Jadwal tanpa awal operasional belum memiliki rentang tanggal yang sah.
+        if ($schedule->operational_from === null) {
+            return $this->unresolvedResult();
+        }
+
         return DB::transaction(function () use ($schedule): array {
             $lockedSchedule = PmSchedule::query()
                 ->active()
@@ -28,11 +35,30 @@ class PmScheduleDateReconciler
     }
 
     /**
-     * @return array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int}
+     * @return array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int, unresolved?: bool}
      */
     public function preview(PmSchedule $schedule): array
     {
+        // Preview unresolved tidak boleh membaca atau menghitung tanggal.
+        if ($schedule->operational_from === null) {
+            return $this->unresolvedResult();
+        }
+
         return $this->evaluate($schedule, false);
+    }
+
+    /** @return array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int, unresolved: bool} */
+    private function unresolvedResult(): array
+    {
+        return [
+            'examined' => 0,
+            'created' => 0,
+            'restored' => 0,
+            'removed' => 0,
+            'unchanged' => 0,
+            'conflicts' => 0,
+            'unresolved' => true,
+        ];
     }
 
     /**
