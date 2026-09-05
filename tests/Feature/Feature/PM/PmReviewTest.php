@@ -10,6 +10,7 @@ use App\Models\PmChecksheetMachine;
 use App\Models\PmChecksheetPart;
 use App\Models\PmChecksheetStandard;
 use App\Models\PmExecution;
+use App\Models\PmExecutionHistory;
 use App\Models\PmExecutionItem;
 use App\Models\PmExecutionMedia;
 use App\Models\PmSchedule;
@@ -325,21 +326,218 @@ class PmReviewTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_delete_pm_review_and_related_data(): void
+    public function test_admin_cannot_delete_protected_execution_and_receives_business_message(): void
     {
+        // Stale test updated: previous expectation was destructive delete.
+        // Per ADR-003, protected executions (in_progress, waiting_review, approved) must be rejected.
+        // setUp creates waiting_review execution, which is protected.
         $response = $this->actingAs($this->admin)->delete("/pm/review/{$this->execution->id}");
 
-        $response->assertRedirect('/pm/review');
+        // Rejection redirects back to detail with business-facing error
+        $response->assertRedirect("/pm/review/{$this->execution->id}");
+        $response->assertSessionHas('flash_error', 'Transaksi PM yang sudah dimulai tidak dapat dihapus karena merupakan data pekerjaan/histori.');
 
-        $this->assertDatabaseMissing('pm_executions', ['id' => $this->execution->id]);
-        $this->assertDatabaseMissing('pm_execution_items', ['pm_execution_id' => $this->execution->id]);
-        $this->assertDatabaseMissing('pm_execution_media', ['pm_execution_id' => $this->execution->id]);
+        // Execution, items, media, and schedule date all preserved
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'status' => 'waiting_review',
+        ]);
 
-        Storage::disk('public')->assertMissing('pm-execution-media/sample.jpg');
+        $this->assertDatabaseHas('pm_execution_items', [
+            'pm_execution_id' => $this->execution->id,
+        ]);
+
+        $this->assertDatabaseHas('pm_execution_media', [
+            'pm_execution_id' => $this->execution->id,
+        ]);
+
+        Storage::disk('public')->assertExists('pm-execution-media/sample.jpg');
 
         $this->assertDatabaseHas('pm_schedule_dates', [
             'id' => $this->scheduleDate->id,
-            'status' => 'scheduled',
+            'status' => 'waiting_review',
         ]);
     }
+
+    public function test_admin_cannot_delete_in_progress_execution(): void
+    {
+        // Scenario A: in_progress execution delete protection
+        $this->execution->update(['status' => 'in_progress']);
+        $this->scheduleDate->update(['status' => 'in_progress']);
+
+        // Create execution history to verify preservation
+        $history = PmExecutionHistory::query()->create([
+            'pm_execution_id' => $this->execution->id,
+            'changed_by' => $this->operator->id,
+            'changed_by_name_snapshot' => $this->operator->name,
+            'field_name' => 'status',
+            'old_value' => 'draft',
+            'new_value' => 'in_progress',
+            'change_note' => 'PM dimulai',
+        ]);
+
+        $initialItemCount = PmExecutionItem::query()->where('pm_execution_id', $this->execution->id)->count();
+        $initialMediaCount = PmExecutionMedia::query()->where('pm_execution_id', $this->execution->id)->count();
+        $initialHistoryCount = PmExecutionHistory::query()->where('pm_execution_id', $this->execution->id)->count();
+
+        $response = $this->actingAs($this->admin)->delete("/pm/review/{$this->execution->id}");
+
+        // Rejection with business-facing message
+        $response->assertRedirect("/pm/review/{$this->execution->id}");
+        $response->assertSessionHas('flash_error');
+
+        // Zero mutation: execution still exists
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'status' => 'in_progress',
+        ]);
+
+        // Schedule date status preserved
+        $this->assertDatabaseHas('pm_schedule_dates', [
+            'id' => $this->scheduleDate->id,
+            'status' => 'in_progress',
+        ]);
+
+        // Items preserved
+        $this->assertEquals($initialItemCount, PmExecutionItem::query()->where('pm_execution_id', $this->execution->id)->count());
+
+        // Media preserved (both DB rows and files)
+        $this->assertEquals($initialMediaCount, PmExecutionMedia::query()->where('pm_execution_id', $this->execution->id)->count());
+        Storage::disk('public')->assertExists('pm-execution-media/sample.jpg');
+
+        // History preserved
+        $this->assertEquals($initialHistoryCount, PmExecutionHistory::query()->where('pm_execution_id', $this->execution->id)->count());
+        $this->assertDatabaseHas('pm_execution_history', ['id' => $history->id]);
+    }
+
+    public function test_admin_cannot_delete_waiting_review_execution(): void
+    {
+        // Scenario B: waiting_review execution delete protection
+        // setUp already creates waiting_review execution
+        $initialItemCount = PmExecutionItem::query()->where('pm_execution_id', $this->execution->id)->count();
+        $initialMediaCount = PmExecutionMedia::query()->where('pm_execution_id', $this->execution->id)->count();
+
+        $response = $this->actingAs($this->admin)->delete("/pm/review/{$this->execution->id}");
+
+        // Rejection with business-facing message
+        $response->assertRedirect("/pm/review/{$this->execution->id}");
+        $response->assertSessionHas('flash_error');
+
+        // Zero mutation: execution still exists
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'status' => 'waiting_review',
+        ]);
+
+        // Schedule date status preserved
+        $this->assertDatabaseHas('pm_schedule_dates', [
+            'id' => $this->scheduleDate->id,
+            'status' => 'waiting_review',
+        ]);
+
+        // Items preserved
+        $this->assertEquals($initialItemCount, PmExecutionItem::query()->where('pm_execution_id', $this->execution->id)->count());
+
+        // Media preserved
+        $this->assertEquals($initialMediaCount, PmExecutionMedia::query()->where('pm_execution_id', $this->execution->id)->count());
+        Storage::disk('public')->assertExists('pm-execution-media/sample.jpg');
+    }
+
+    public function test_admin_cannot_delete_approved_execution(): void
+    {
+        // Scenario C: approved execution delete protection
+        $this->execution->update([
+            'status' => 'approved',
+            'approved_at' => now(),
+            'approved_by' => $this->admin->id,
+            'approved_by_name_snapshot' => $this->admin->name,
+        ]);
+        $this->scheduleDate->update(['status' => 'approved']);
+
+        $initialItemCount = PmExecutionItem::query()->where('pm_execution_id', $this->execution->id)->count();
+        $initialMediaCount = PmExecutionMedia::query()->where('pm_execution_id', $this->execution->id)->count();
+
+        $response = $this->actingAs($this->admin)->delete("/pm/review/{$this->execution->id}");
+
+        // Rejection with business-facing message
+        $response->assertRedirect("/pm/review/{$this->execution->id}");
+        $response->assertSessionHas('flash_error');
+
+        // Zero mutation: execution still exists with approved metadata
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'status' => 'approved',
+            'approved_by' => $this->admin->id,
+        ]);
+
+        // Schedule date status preserved
+        $this->assertDatabaseHas('pm_schedule_dates', [
+            'id' => $this->scheduleDate->id,
+            'status' => 'approved',
+        ]);
+
+        // Items preserved
+        $this->assertEquals($initialItemCount, PmExecutionItem::query()->where('pm_execution_id', $this->execution->id)->count());
+
+        // Media preserved
+        $this->assertEquals($initialMediaCount, PmExecutionMedia::query()->where('pm_execution_id', $this->execution->id)->count());
+        Storage::disk('public')->assertExists('pm-execution-media/sample.jpg');
+    }
+
+    public function test_non_admin_cannot_delete_pm_execution(): void
+    {
+        // Scenario D: authorization regression
+        $response = $this->actingAs($this->operator)->delete("/pm/review/{$this->execution->id}");
+
+        // Authorization enforced
+        $response->assertRedirect('/403');
+
+        // Execution unchanged
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'status' => 'waiting_review',
+        ]);
+    }
+
+    public function test_admin_can_still_view_and_approve_pm_review(): void
+    {
+        // Scenario E: valid PM Review workflow regression
+        // View detail
+        $this->actingAs($this->admin)
+            ->get("/pm/review/{$this->execution->id}")
+            ->assertOk()
+            ->assertSee('Kondisi Gearbox');
+
+        // Edit workflow still works
+        $this->actingAs($this->admin)
+            ->put("/pm/review/{$this->execution->id}", [
+                'items' => [
+                    $this->actionItem->id => ['action_value' => 'LUBRIKASI'],
+                    $this->numberItem->id => ['number_value' => 55],
+                ],
+                'submitted_at' => now()->subMinutes(10)->format('Y-m-d\TH:i'),
+                'change_note' => 'Koreksi review',
+                'review_note' => 'Perlu dipantau',
+            ])
+            ->assertRedirect("/pm/review/{$this->execution->id}");
+
+        $this->assertDatabaseHas('pm_execution_items', [
+            'id' => $this->actionItem->id,
+            'action_value' => 'LUBRIKASI',
+        ]);
+
+        // Approve workflow still works
+        $this->actingAs($this->admin)
+            ->patch("/pm/review/{$this->execution->id}/approve", [
+                'review_note' => 'Approved',
+            ])
+            ->assertRedirect("/pm/review/{$this->execution->id}");
+
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'status' => 'approved',
+        ]);
+    }
+
+    // ====================================================================
 }

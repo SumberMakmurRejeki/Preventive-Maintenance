@@ -115,10 +115,16 @@ class PmReviewController extends Controller
     public function destroy(Request $request, int $executionId): RedirectResponse
     {
         $execution = $this->pmReviewService->findOrFail($executionId);
-        $this->pmReviewService->delete($request, $execution);
+        $result = $this->pmReviewService->delete($request, $execution);
+
+        if (! $result['allowed']) {
+            return redirect()
+                ->route('pm-review.show', $execution->id)
+                ->with('flash_error', $result['message']);
+        }
 
         return redirect()
             ->route('pm-review.index')
-            ->with('flash_success', 'Hasil PM berhasil dihapus permanen.');
+            ->with('flash_success', $result['message']);
     }
 }

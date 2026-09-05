@@ -283,26 +283,58 @@ class PmReviewService
         });
     }
 
-    public function delete(Request $request, PmExecution $execution): void
+    /**
+     * Hapus PM execution melalui normal PM Review DELETE workflow.
+     *
+     * Mengembalikan array result dengan kunci 'allowed' dan 'message'.
+     * Jika execution sudah memiliki status protected (in_progress, waiting_review, approved),
+     * operasi ditolak tanpa mutation apapun untuk melindungi historical transaction.
+     *
+     * @return array{allowed:bool,message:string}
+     */
+    public function delete(Request $request, PmExecution $execution): array
     {
-        DB::transaction(function () use ($request, $execution): void {
-            $scheduleDate = $execution->scheduleDate;
+        return DB::transaction(function () use ($request, $execution): array {
+            // Re-read execution with lock untuk mencegah race condition
+            // antara pengecekan status dan mutation
+            $lockedExecution = PmExecution::query()
+                ->where('id', $execution->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $lockedExecution) {
+                return [
+                    'allowed' => false,
+                    'message' => 'Transaksi PM tidak ditemukan.',
+                ];
+            }
+
+            // Protected status check DI DALAM transaksi dengan lock
+            $protectedStatuses = ['in_progress', 'waiting_review', 'approved'];
+            if (in_array($lockedExecution->status, $protectedStatuses, true)) {
+                return [
+                    'allowed' => false,
+                    'message' => 'Transaksi PM yang sudah dimulai tidak dapat dihapus karena merupakan data pekerjaan/histori.',
+                ];
+            }
+
+            $scheduleDate = $lockedExecution->scheduleDate;
 
             $this->activityLogService->log(
                 request: $request,
                 moduleName: 'pm_review',
                 action: 'delete',
-                description: sprintf('Delete PM execution #%d', $execution->id),
+                description: sprintf('Delete PM execution #%d', $lockedExecution->id),
                 tableName: 'pm_executions',
-                recordId: $execution->id,
+                recordId: $lockedExecution->id,
                 oldValues: [
-                    'status' => $execution->status,
-                    'machine_id' => $execution->machine_id,
-                    'operator_name_snapshot' => $execution->operator_name_snapshot,
+                    'status' => $lockedExecution->status,
+                    'machine_id' => $lockedExecution->machine_id,
+                    'operator_name_snapshot' => $lockedExecution->operator_name_snapshot,
                 ],
             );
 
-            $mediaList = PmExecutionMedia::query()->where('pm_execution_id', $execution->id)->get();
+            $mediaList = PmExecutionMedia::query()->where('pm_execution_id', $lockedExecution->id)->get();
             foreach ($mediaList as $media) {
                 if ($media->file_path) {
                     Storage::disk('public')->delete($media->file_path);
@@ -312,7 +344,7 @@ class PmReviewService
                 }
             }
 
-            $execution->forceDelete();
+            $lockedExecution->forceDelete();
 
             if ($scheduleDate) {
                 $scheduleDate->forceFill([
@@ -323,8 +355,13 @@ class PmReviewService
 
             PrimeNotification::query()
                 ->where('related_table', 'pm_executions')
-                ->where('related_id', $execution->id)
+                ->where('related_id', $lockedExecution->id)
                 ->delete();
+
+            return [
+                'allowed' => true,
+                'message' => 'Hasil PM berhasil dihapus permanen.',
+            ];
         });
     }
 
