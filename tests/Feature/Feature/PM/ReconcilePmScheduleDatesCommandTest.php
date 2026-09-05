@@ -9,6 +9,7 @@ use App\Models\PmChecksheetMachine;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use RuntimeException;
 use Tests\TestCase;
@@ -177,6 +178,55 @@ class ReconcilePmScheduleDatesCommandTest extends TestCase
 
         $this->assertNotNull(PmScheduleDate::query()->find($existing->id));
         $this->assertSame(1, PmScheduleDate::query()->count());
+    }
+
+    /**
+     * TASK-003 Slice 3 Defect A — RED regression untuk command path.
+     *
+     * `pm:reconcile-schedule-dates --apply` harus mencapai kontrak Machine-first
+     * lock yang sama dengan reconciler langsung: query lock baris Machine tunggal
+     * (`WHERE id = ? ... LIMIT 1`, hasil dari `lockForUpdate()->firstOrFail()`)
+     * harus terjadi sebelum mutasi `pm_schedule_dates` apa pun.
+     *
+     * Query eager-load command (`with('checksheetMachine.machine')`) juga
+     * menyentuh tabel `machines`, tetapi bentuknya bulk `WHERE machines.id IN (...)`
+     * tanpa `LIMIT 1` sehingga TIDAK dihitung sebagai bukti lock. Deteksi harus
+     * spesifik pada bentuk query lock, bukan sembarang query `FROM machines`.
+     */
+    public function test_apply_command_locks_machine_before_mutating_schedule_dates(): void
+    {
+        $schedule = $this->createSchedule();
+        // Baris stale memaksa mutasi removal; tanggal weekly yang belum ada memaksa creation.
+        $this->createScheduleDate($schedule, '2026-05-01');
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $this->artisan('pm:reconcile-schedule-dates', [
+            '--schedule-id' => [$schedule->id],
+            '--apply' => true,
+        ])->assertExitCode(0);
+
+        $machineLockIndex = null;
+        $mutationIndex = null;
+
+        foreach ($queries as $index => $sql) {
+            // Query lock tunggal: WHERE "id" = ? (unqualified, bukan "machines"."id" IN (...)) + LIMIT 1.
+            if ($machineLockIndex === null
+                && preg_match('/from ["`]machines["`] where ["`]id["`] = \?.*limit 1/i', $sql) === 1) {
+                $machineLockIndex = $index;
+            }
+
+            if ($mutationIndex === null && preg_match('/^(insert into|delete from|update) ["`]pm_schedule_dates["`]/i', $sql) === 1) {
+                $mutationIndex = $index;
+            }
+        }
+
+        $this->assertNotNull($machineLockIndex, 'Expected the command --apply path to reach a single-row Machine lock query (lockForUpdate()->firstOrFail()) before mutating schedule dates.');
+        $this->assertNotNull($mutationIndex, 'Expected this scenario to produce a pm_schedule_dates mutation.');
+        $this->assertLessThan($mutationIndex, $machineLockIndex, 'Machine lock must occur before any pm_schedule_dates mutation reached through the command path.');
     }
 
     private function createSchedule(?PmChecksheet $checksheet = null): PmSchedule

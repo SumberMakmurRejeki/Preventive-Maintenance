@@ -2,6 +2,7 @@
 
 namespace App\Services\PM;
 
+use App\Models\Machine;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,6 +25,13 @@ class PmScheduleDateReconciler
         }
 
         return DB::transaction(function () use ($schedule): array {
+            // TASK-003 Slice 3: Kunci machine terlebih dahulu (urutan ID ascending)
+            $machineId = (int) $schedule->checksheetMachine()->firstOrFail()->machine_id;
+            Machine::query()
+                ->where('id', $machineId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
             $lockedSchedule = PmSchedule::query()
                 ->active()
                 ->whereKey($schedule->getKey())
@@ -78,6 +86,7 @@ class PmScheduleDateReconciler
         $dateRowsQuery = PmScheduleDate::query()
             ->withTrashed()
             ->where('pm_schedule_id', $schedule->id)
+            ->orderBy('id', 'asc')
             ->withCount([
                 'executions as executions_with_trashed_count' => fn (Builder $query) => $query->withTrashed(),
             ]);

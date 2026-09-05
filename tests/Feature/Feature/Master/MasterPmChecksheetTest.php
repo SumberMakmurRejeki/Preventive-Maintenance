@@ -6,12 +6,14 @@ use App\Models\GuestSession;
 use App\Models\Location;
 use App\Models\Machine;
 use App\Models\PmChecksheet;
+use App\Models\PmChecksheetMachine;
 use App\Models\PmExecution;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use Carbon\Carbon;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -329,5 +331,75 @@ class MasterPmChecksheetTest extends TestCase
             ])
             ->all());
         $this->actingAs($this->admin)->get('/pm/review')->assertOk()->assertSee('MC-01');
+    }
+
+    /**
+     * Memastikan lock Machine terjadi sebelum mutation child/config checksheet.
+     */
+    public function test_update_locks_selected_machines_before_child_mutation(): void
+    {
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-LOCK-ORDER',
+            'checksheet_name' => 'Lock Order Checksheet',
+            'is_active' => true,
+        ]);
+
+        PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $this->machine->id,
+        ]);
+
+        $queries = [];
+        // Hook ini mengamati urutan query tanpa bergantung pada SQL FOR UPDATE SQLite.
+        DB::connection()->beforeExecuting(function (string $query) use (&$queries): void {
+            $queries[] = strtolower($query);
+        });
+        $this->actingAs($this->admin)->put("/pm/master-checksheet/{$checksheet->id}", [
+            'checksheet_code' => 'PM-LOCK-ORDER',
+            'checksheet_name' => 'Lock Order Checksheet',
+            'is_active' => '1',
+            'wizard_payload' => json_encode([
+                'selected_machine_ids' => [$this->machine->id],
+                'parts' => [
+                    $this->machine->id => [
+                        ['id' => 'part-lock', 'name' => 'Part Lock', 'description' => 'Part test'],
+                    ],
+                ],
+                'standards' => [
+                    'part-lock' => [[
+                        'name' => 'Standard Lock',
+                        'input_type' => 'number',
+                        'target_value' => 1,
+                        'action_options' => [],
+                        'is_required' => true,
+                        'is_active' => true,
+                    ]],
+                ],
+                'schedule' => [
+                    'frequency_type' => 'weekly',
+                    'weekly_days' => [1],
+                    'monthly_day' => null,
+                    'operational_from' => '2026-09-15',
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ])->assertRedirect("/pm/master-checksheet/{$checksheet->id}");
+
+        $machineLock = array_key_first(array_filter(
+            $queries,
+            fn (string $query): bool => str_contains($query, 'from "machines"')
+                && str_contains($query, 'where "id" in')
+                && str_contains($query, 'order by "id" asc'),
+        ));
+        $childMutation = array_key_first(array_filter(
+            $queries,
+            fn (string $query): bool => preg_match(
+                '/\b(insert into|update)\s+"?pm_(checksheet_machines|checksheet_parts|checksheet_standards|schedules)/i',
+                $query,
+            ) === 1,
+        ));
+
+        $this->assertNotNull($machineLock, 'Selected machines must be locked before synchronization.');
+        $this->assertNotNull($childMutation, 'Synchronization must mutate child/config rows.');
+        $this->assertLessThan($childMutation, $machineLock);
     }
 }

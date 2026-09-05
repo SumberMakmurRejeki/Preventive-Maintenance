@@ -18,8 +18,7 @@ class MasterMesinController extends Controller
     public function __construct(
         protected MachineService $machineService,
         protected PrimeAuthService $primeAuth,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
@@ -128,7 +127,13 @@ class MasterMesinController extends Controller
     public function destroy(Request $request, int $machineId): RedirectResponse
     {
         $machine = $this->findMachine($machineId);
-        $this->machineService->delete($request, $machine);
+
+        // TASK-003 Slice 3: Cek proteksi histori sebelum menghapus
+        if (!$this->machineService->delete($request, $machine)) {
+            return redirect()
+                ->route('master-mesin.index')
+                ->with('flash_error', 'Mesin yang sudah memiliki transaksi atau riwayat maintenance tidak dapat dihapus.');
+        }
 
         return redirect()
             ->route('master-mesin.index')

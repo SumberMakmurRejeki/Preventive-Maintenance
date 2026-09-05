@@ -2,6 +2,7 @@
 
 namespace App\Services\Master;
 
+use App\Models\Machine;
 use App\Models\PmChecksheet;
 use App\Models\PmChecksheetMachine;
 use App\Models\PmChecksheetPart;
@@ -158,6 +159,27 @@ class PmChecksheetService
                 throw new DomainException('Checksheet nonaktif tidak dapat disinkronkan.');
             }
 
+            // TASK-003 Slice 3: Ambil ID mesin yang memiliki jadwal aktif saja
+            // (bukan semua assignment) untuk menghindari lock berlebihan
+            $machineIds = PmChecksheetMachine::query()
+                ->where('pm_checksheet_id', $lockedChecksheet->id)
+                ->whereHas('schedules', fn ($q) => $q->active())
+                ->orderBy('machine_id', 'asc')
+                ->pluck('machine_id')
+                ->unique()
+                ->values()
+                ->all();
+
+            // TASK-003 Slice 3: Kunci mesin berurutan ascending SEBELUM jadwal
+            if (! empty($machineIds)) {
+                Machine::query()
+                    ->whereIn('id', $machineIds)
+                    ->orderBy('id', 'asc')
+                    ->lockForUpdate()
+                    ->get();
+            }
+
+            // NOW lock schedules (after machines are locked)
             $schedules = $this->activeSchedulesFor($lockedChecksheet->id)
                 ->lockForUpdate()
                 ->get();
@@ -286,7 +308,15 @@ class PmChecksheetService
 
     protected function syncWizardData(PmChecksheet $checksheet, array $payload, Request $request): void
     {
-        $selectedMachineIds = array_map('intval', $payload['selected_machine_ids']);
+        // Normalisasi ID lalu kunci semua Machine sebelum mutation child/config.
+        $selectedMachineIds = array_values(array_unique(array_map('intval', $payload['selected_machine_ids'])));
+        sort($selectedMachineIds, SORT_NUMERIC);
+        Machine::query()
+            ->whereIn('id', $selectedMachineIds)
+            ->orderBy('id', 'asc')
+            ->lockForUpdate()
+            ->get();
+
         $parts = $payload['parts'];
         $standards = $payload['standards'];
         $schedule = $payload['schedule'];

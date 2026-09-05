@@ -48,4 +48,17 @@ class QrCodeService
         }
     }
 
+    public function deletePath(?string $path): void
+    {
+        // Path kosong aman diabaikan; false dari storage harus terlihat oleh caller.
+        if ($path === null || $path === '') {
+            return;
+        }
+
+        $deleted = Storage::disk('public')->delete($path);
+
+        if ($deleted === false) {
+            throw new \RuntimeException("Failed to delete QR code asset [{$path}].");
+        }
+    }
 }

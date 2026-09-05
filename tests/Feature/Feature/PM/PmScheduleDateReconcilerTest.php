@@ -11,6 +11,7 @@ use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Services\PM\PmScheduleDateReconciler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use RuntimeException;
 use Tests\TestCase;
@@ -231,6 +232,8 @@ class PmScheduleDateReconcilerTest extends TestCase
 
         $this->assertNotNull(PmScheduleDate::query()->find($stale->id));
         $this->assertSame([], $this->visibleAugustDates());
+    }
+
     public function test_unresolved_schedule_preview_and_reconcile_skip_without_mutation(): void
     {
         $existing = $this->createScheduleDate('2026-08-07');
@@ -254,6 +257,54 @@ class PmScheduleDateReconcilerTest extends TestCase
         $this->assertSame(1, PmScheduleDate::query()->count());
     }
 
+    /**
+     * TASK-003 Slice 3 Defect A — regresi RED untuk lock Machine-first pada reconciler langsung.
+     *
+     * `reconcile()` wajib mengunci baris Machine induk sebelum menjalankan
+     * query mutasi apa pun (`insert/update/delete`) ke `pm_schedule_dates`.
+     * Terhadap HEAD sebelum koreksi ini, `reconcile()` tidak pernah merujuk tabel
+     * `machines`, sehingga assertion ini gagal karena query Machine tidak ditemukan,
+     * bukan karena urutan lock salah.
+     */
+    public function test_reconcile_locks_machine_before_mutating_schedule_dates(): void
+    {
+        // Stale row forces a removal mutation; missing weekly dates force creation.
+        $this->createScheduleDate('2026-05-01');
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $this->reconciler()->reconcile($this->schedule);
+
+        [$machineIndex, $mutationIndex] = $this->firstMachineAndScheduleDateMutationIndexes($queries);
+
+        $this->assertNotNull($machineIndex, 'Expected reconcile() to query the machines table before mutating schedule dates.');
+        $this->assertNotNull($mutationIndex, 'Expected this scenario to produce a pm_schedule_dates mutation.');
+        $this->assertLessThan($mutationIndex, $machineIndex, 'Machine must be locked before any pm_schedule_dates mutation.');
+    }
+
+    /**
+     * @param  list<string>  $queries
+     * @return array{0: int|null, 1: int|null}
+     */
+    private function firstMachineAndScheduleDateMutationIndexes(array $queries): array
+    {
+        $machineIndex = null;
+        $mutationIndex = null;
+
+        foreach ($queries as $index => $sql) {
+            if ($machineIndex === null && preg_match('/from ["`]machines["`]/i', $sql) === 1) {
+                $machineIndex = $index;
+            }
+
+            if ($mutationIndex === null && preg_match('/^(insert into|delete from|update) ["`]pm_schedule_dates["`]/i', $sql) === 1) {
+                $mutationIndex = $index;
+            }
+        }
+
+        return [$machineIndex, $mutationIndex];
     }
 
     private function reconciler(): PmScheduleDateReconciler
