@@ -8,9 +8,11 @@ use App\Models\BreakdownMedia;
 use App\Models\GuestSession;
 use App\Models\Location;
 use App\Models\Machine;
+use App\Models\PrimeNotification;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class BreakdownReviewTest extends TestCase
@@ -228,8 +230,131 @@ class BreakdownReviewTest extends TestCase
             ->assertSessionHasErrors(['change_note']);
     }
 
-    public function test_admin_can_delete_open_and_closed_with_cascade(): void
+    /**
+     * Scenario A: Persisted OPEN breakdown delete must be rejected.
+     * OPEN breakdown is active transaction evidence and cannot be hard-deleted.
+     */
+    public function test_admin_cannot_delete_persisted_open_breakdown(): void
     {
+        // Fake public disk untuk physical file preservation assertion
+        Storage::fake('public');
+
+        // Add media to OPEN breakdown untuk preservation assertion
+        $openMediaPath = 'breakdown-media/open_test.jpg';
+        Storage::disk('public')->put($openMediaPath, 'fake-image-content');
+
+        BreakdownMedia::query()->create([
+            'breakdown_id' => $this->openBreakdown->id,
+            'file_type' => 'photo',
+            'file_path' => $openMediaPath,
+            'original_file_path' => $openMediaPath,
+            'file_name' => 'open_test.jpg',
+            'mime_type' => 'image/jpeg',
+            'file_size' => 500,
+            'original_file_size' => 500,
+            'compressed_file_size' => 500,
+            'note' => 'Test media for OPEN breakdown',
+            'uploaded_by' => $this->operator->id,
+            'uploaded_by_name_snapshot' => $this->operator->name,
+        ]);
+
+        // Add history to OPEN breakdown
+        BreakdownHistory::query()->create([
+            'breakdown_id' => $this->openBreakdown->id,
+            'changed_by' => $this->admin->id,
+            'changed_at' => now(),
+            'field_name' => 'problem',
+            'old_value' => 'old problem',
+            'new_value' => 'new problem',
+            'change_note' => 'test edit',
+            'created_at' => now(),
+        ]);
+
+        // Add notification for OPEN breakdown
+        PrimeNotification::query()->create([
+            'title' => 'Breakdown Open',
+            'message' => 'Test notification',
+            'related_table' => 'breakdowns',
+            'related_id' => $this->openBreakdown->id,
+            'notification_type' => 'breakdown_open',
+        ]);
+
+        // Capture pre-delete state
+        $preDeleteBreakdown = $this->openBreakdown->fresh();
+        $preDeleteMediaCount = BreakdownMedia::query()->where('breakdown_id', $this->openBreakdown->id)->count();
+        $preDeleteHistoryCount = BreakdownHistory::query()->where('breakdown_id', $this->openBreakdown->id)->count();
+        $preDeleteNotificationCount = PrimeNotification::query()
+            ->where('related_table', 'breakdowns')
+            ->where('related_id', $this->openBreakdown->id)
+            ->count();
+
+        // Assert physical file exists before delete attempt
+        $this->assertTrue(Storage::disk('public')->exists($openMediaPath));
+
+        // Attempt DELETE
+        $response = $this->actingAs($this->admin)
+            ->delete("/breakdown/review/{$this->openBreakdown->id}");
+
+        // Assert rejection with redirect
+        $response->assertRedirect('/breakdown/review');
+        $response->assertSessionHas('flash_error');
+
+        // Assert business message
+        $this->assertStringContainsString(
+            'Data breakdown yang sudah tercatat tidak dapat dihapus karena merupakan riwayat kejadian mesin.',
+            session('flash_error')
+        );
+
+        // Assert breakdown row preserved
+        $this->assertDatabaseHas('breakdowns', [
+            'id' => $this->openBreakdown->id,
+            'status' => 'open',
+        ]);
+
+        // Assert status unchanged
+        $postDeleteBreakdown = $this->openBreakdown->fresh();
+        $this->assertEquals('open', $postDeleteBreakdown->status);
+        $this->assertEquals($preDeleteBreakdown->problem, $postDeleteBreakdown->problem);
+        $this->assertEquals($preDeleteBreakdown->machine_id, $postDeleteBreakdown->machine_id);
+        $this->assertEquals($preDeleteBreakdown->updated_at->toDateTimeString(), $postDeleteBreakdown->updated_at->toDateTimeString());
+
+        // Assert media DB row preserved
+        $this->assertEquals($preDeleteMediaCount, BreakdownMedia::query()->where('breakdown_id', $this->openBreakdown->id)->count());
+
+        // Assert physical file preserved
+        $this->assertTrue(Storage::disk('public')->exists($openMediaPath));
+
+        // Assert history preserved
+        $this->assertEquals($preDeleteHistoryCount, BreakdownHistory::query()->where('breakdown_id', $this->openBreakdown->id)->count());
+
+        // Assert notifications preserved
+        $this->assertEquals($preDeleteNotificationCount, PrimeNotification::query()
+            ->where('related_table', 'breakdowns')
+            ->where('related_id', $this->openBreakdown->id)
+            ->count());
+
+        // Assert NO activity log for rejected delete
+        $this->assertDatabaseMissing('user_activity_logs', [
+            'module_name' => 'breakdown_review',
+            'action' => 'delete',
+            'table_name' => 'breakdowns',
+            'record_id' => $this->openBreakdown->id,
+        ]);
+    }
+
+    /**
+     * Scenario B: Persisted CLOSED breakdown delete must be rejected.
+     * CLOSED breakdown is finalized historical evidence and cannot be hard-deleted.
+     */
+    public function test_admin_cannot_delete_persisted_closed_breakdown(): void
+    {
+        // Fake public disk untuk physical file preservation assertion
+        Storage::fake('public');
+
+        // Create physical file untuk CLOSED breakdown media (heater_test.mp4 dari setUp)
+        $closedMediaPath = 'breakdown-media/heater_test.mp4';
+        Storage::disk('public')->put($closedMediaPath, 'fake-video-content');
+
         BreakdownHistory::query()->create([
             'breakdown_id' => $this->closedBreakdown->id,
             'changed_by' => $this->admin->id,
@@ -241,19 +366,146 @@ class BreakdownReviewTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $this->actingAs($this->admin)
-            ->delete("/breakdown/review/{$this->closedBreakdown->id}")
-            ->assertRedirect('/breakdown/review');
+        // Add notification for CLOSED breakdown
+        PrimeNotification::query()->create([
+            'title' => 'Breakdown Closed',
+            'message' => 'Test notification',
+            'related_table' => 'breakdowns',
+            'related_id' => $this->closedBreakdown->id,
+            'notification_type' => 'breakdown_closed',
+        ]);
 
-        $this->assertDatabaseMissing('breakdowns', ['id' => $this->closedBreakdown->id]);
-        $this->assertDatabaseMissing('breakdown_media', ['breakdown_id' => $this->closedBreakdown->id]);
-        $this->assertDatabaseMissing('breakdown_history', ['breakdown_id' => $this->closedBreakdown->id]);
+        // Capture pre-delete state
+        $preDeleteBreakdown = $this->closedBreakdown->fresh();
+        $preDeleteMediaCount = BreakdownMedia::query()->where('breakdown_id', $this->closedBreakdown->id)->count();
+        $preDeleteHistoryCount = BreakdownHistory::query()->where('breakdown_id', $this->closedBreakdown->id)->count();
+        $preDeleteNotificationCount = PrimeNotification::query()
+            ->where('related_table', 'breakdowns')
+            ->where('related_id', $this->closedBreakdown->id)
+            ->count();
 
-        $this->assertDatabaseHas('user_activity_logs', [
+        // Assert physical file exists before delete attempt
+        $this->assertTrue(Storage::disk('public')->exists($closedMediaPath));
+
+        // Attempt DELETE
+        $response = $this->actingAs($this->admin)
+            ->delete("/breakdown/review/{$this->closedBreakdown->id}");
+
+        // Assert rejection with redirect
+        $response->assertRedirect('/breakdown/review');
+        $response->assertSessionHas('flash_error');
+
+        // Assert business message
+        $this->assertStringContainsString(
+            'Data breakdown yang sudah tercatat tidak dapat dihapus karena merupakan riwayat kejadian mesin.',
+            session('flash_error')
+        );
+
+        // Assert breakdown row preserved
+        $this->assertDatabaseHas('breakdowns', [
+            'id' => $this->closedBreakdown->id,
+            'status' => 'closed',
+        ]);
+
+        // Assert status and final data unchanged
+        $postDeleteBreakdown = $this->closedBreakdown->fresh();
+        $this->assertEquals('closed', $postDeleteBreakdown->status);
+        $this->assertEquals($preDeleteBreakdown->root_cause, $postDeleteBreakdown->root_cause);
+        $this->assertEquals($preDeleteBreakdown->action_taken, $postDeleteBreakdown->action_taken);
+        $this->assertEquals($preDeleteBreakdown->countermeasure, $postDeleteBreakdown->countermeasure);
+        $this->assertEquals($preDeleteBreakdown->downtime_minutes, $postDeleteBreakdown->downtime_minutes);
+        $this->assertEquals($preDeleteBreakdown->closed_at->toDateTimeString(), $postDeleteBreakdown->closed_at->toDateTimeString());
+
+        // Assert media DB row preserved
+        $this->assertEquals($preDeleteMediaCount, BreakdownMedia::query()->where('breakdown_id', $this->closedBreakdown->id)->count());
+
+        // Assert physical file preserved
+        $this->assertTrue(Storage::disk('public')->exists($closedMediaPath));
+
+        // Assert history preserved
+        $this->assertEquals($preDeleteHistoryCount, BreakdownHistory::query()->where('breakdown_id', $this->closedBreakdown->id)->count());
+
+        // Assert notifications preserved
+        $this->assertEquals($preDeleteNotificationCount, PrimeNotification::query()
+            ->where('related_table', 'breakdowns')
+            ->where('related_id', $this->closedBreakdown->id)
+            ->count());
+
+        // Assert NO activity log for rejected delete
+        $this->assertDatabaseMissing('user_activity_logs', [
             'module_name' => 'breakdown_review',
             'action' => 'delete',
             'table_name' => 'breakdowns',
+            'record_id' => $this->closedBreakdown->id,
         ]);
+    }
+
+    /**
+     * Scenario C: Non-admin users cannot access delete route.
+     * Authorization middleware must reject non-admin delete attempts.
+     */
+    public function test_operator_cannot_delete_breakdown(): void
+    {
+        $response = $this->actingAs($this->operator)
+            ->delete("/breakdown/review/{$this->openBreakdown->id}");
+
+        // Assert redirect (operator not authorized, middleware redirects)
+        $response->assertRedirect();
+
+        // Assert breakdown still exists
+        $this->assertDatabaseHas('breakdowns', [
+            'id' => $this->openBreakdown->id,
+            'status' => 'open',
+        ]);
+    }
+
+    /**
+     * Scenario D: Valid OPEN workflow regression.
+     * Delete protection must not break valid edit and close workflows.
+     */
+    public function test_admin_can_still_edit_open_breakdown(): void
+    {
+        $updatePayload = [
+            'problem' => 'Updated problem description',
+            'open_note' => 'Updated open note',
+            'breakdown_at' => $this->openBreakdown->breakdown_at->format('Y-m-d H:i:s'),
+            'status' => 'open',
+            'change_note' => 'Test edit after protection',
+        ];
+
+        $response = $this->actingAs($this->admin)
+            ->put("/breakdown/review/{$this->openBreakdown->id}", $updatePayload);
+
+        $response->assertRedirect("/breakdown/review/{$this->openBreakdown->id}");
+
+        // Assert update succeeded
+        $this->assertDatabaseHas('breakdowns', [
+            'id' => $this->openBreakdown->id,
+            'problem' => 'Updated problem description',
+            'open_note' => 'Updated open note',
+            'status' => 'open',
+        ]);
+
+        // Assert history recorded
+        $this->assertDatabaseHas('breakdown_history', [
+            'breakdown_id' => $this->openBreakdown->id,
+            'field_name' => 'problem',
+            'new_value' => 'Updated problem description',
+        ]);
+    }
+
+    /**
+     * Scenario E: CLOSED breakdown can still be viewed.
+     * Delete protection must not break read access to historical breakdowns.
+     */
+    public function test_admin_can_view_closed_breakdown(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->get("/breakdown/review/{$this->closedBreakdown->id}");
+
+        $response->assertOk();
+        $response->assertViewIs('pages.breakdown.review.show');
+        $response->assertViewHas('breakdown.id', $this->closedBreakdown->id);
     }
 }
 

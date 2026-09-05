@@ -94,12 +94,17 @@ class BreakdownReviewController extends Controller
     public function destroy(Request $request, int $id): RedirectResponse
     {
         $breakdown = $this->breakdownReviewService->findOrFail($id);
-        $code = $breakdown->breakdown_code;
-        $this->breakdownReviewService->delete($request, $breakdown);
+        $result = $this->breakdownReviewService->delete($request, $breakdown);
+
+        if (! $result['allowed']) {
+            return redirect()
+                ->route('breakdown-review.index')
+                ->with('flash_error', $result['message']);
+        }
 
         return redirect()
             ->route('breakdown-review.index')
-            ->with('flash_success', "Breakdown {$code} berhasil dihapus permanen.");
+            ->with('flash_success', $result['message']);
     }
 }
 

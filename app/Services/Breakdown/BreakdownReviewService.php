@@ -214,29 +214,65 @@ class BreakdownReviewService
         });
     }
 
-    public function delete(Request $request, Breakdown $breakdown): void
+    /**
+     * Hapus breakdown.
+     *
+     * BREAKDOWN DELETE PROTECTION (TASK-003 SLICE 2):
+     * Semua breakdown yang sudah tercatat (status OPEN atau CLOSED) tidak dapat dihapus
+     * karena merupakan riwayat kejadian mesin yang harus dipertahankan sesuai ADR-003.
+     *
+     * @return array{allowed:bool,message:string}
+     */
+    public function delete(Request $request, Breakdown $breakdown): array
     {
-        DB::transaction(function () use ($request, $breakdown): void {
+        return DB::transaction(function () use ($request, $breakdown): array {
+            // Re-read dengan lock untuk mencegah race condition antara pengecekan status dan mutation
+            $locked = Breakdown::query()
+                ->where('id', $breakdown->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $locked) {
+                return [
+                    'allowed' => false,
+                    'message' => 'Data breakdown tidak ditemukan.',
+                ];
+            }
+
+            // Guard: Semua breakdown dengan status OPEN atau CLOSED adalah data historis
+            // yang dilindungi dan tidak dapat dihapus
+            if (in_array($locked->status, ['open', 'closed'], true)) {
+                return [
+                    'allowed' => false,
+                    'message' => 'Data breakdown yang sudah tercatat tidak dapat dihapus karena merupakan riwayat kejadian mesin.',
+                ];
+            }
+
             $this->activityLogService->log(
                 request: $request,
                 moduleName: 'breakdown_review',
                 action: 'delete',
-                description: sprintf('Delete breakdown %s', $breakdown->breakdown_code),
+                description: sprintf('Delete breakdown %s', $locked->breakdown_code),
                 tableName: 'breakdowns',
-                recordId: $breakdown->id,
+                recordId: $locked->id,
                 oldValues: [
-                    'breakdown_code' => $breakdown->breakdown_code,
-                    'status' => $breakdown->status,
-                    'machine_id' => $breakdown->machine_id,
+                    'breakdown_code' => $locked->breakdown_code,
+                    'status' => $locked->status,
+                    'machine_id' => $locked->machine_id,
                 ],
             );
 
             PrimeNotification::query()
                 ->where('related_table', 'breakdowns')
-                ->where('related_id', $breakdown->id)
+                ->where('related_id', $locked->id)
                 ->delete();
 
-            $breakdown->forceDelete();
+            $locked->forceDelete();
+
+            return [
+                'allowed' => true,
+                'message' => sprintf('Breakdown %s berhasil dihapus permanen.', $locked->breakdown_code),
+            ];
         });
     }
 }
