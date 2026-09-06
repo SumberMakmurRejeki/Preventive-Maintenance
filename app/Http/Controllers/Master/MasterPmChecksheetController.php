@@ -173,7 +173,14 @@ class MasterPmChecksheetController extends Controller
     public function destroy(Request $request, int $checksheetId): RedirectResponse
     {
         $checksheet = $this->findChecksheet($checksheetId);
-        $this->checksheetService->delete($request, $checksheet);
+
+        try {
+            $this->checksheetService->delete($request, $checksheet);
+        } catch (DomainException $e) {
+            return redirect()
+                ->route('master-checksheet.index')
+                ->with('flash_error', $e->getMessage());
+        }
 
         return redirect()
             ->route('master-checksheet.index')

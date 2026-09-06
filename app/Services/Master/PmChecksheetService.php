@@ -35,6 +35,7 @@ class PmChecksheetService
                 'description' => $payload['description'] ?? null,
                 'is_active' => (bool) ($payload['is_active'] ?? true),
                 'created_by' => $request->user()?->id,
+                'assignment_history_known' => true,
             ]);
 
             $this->syncWizardData($checksheet, $payload, $request);
@@ -120,21 +121,55 @@ class PmChecksheetService
 
     public function delete(Request $request, PmChecksheet $checksheet): void
     {
-        $oldValues = $checksheet->only(['checksheet_code', 'checksheet_name', 'description', 'is_active']);
-        $checksheetId = $checksheet->id;
-        $checksheetCode = $checksheet->checksheet_code;
+        DB::transaction(function () use ($request, $checksheet): void {
+            // Re-read dan kunci baris di bawah transaksi agar keputusan eligibility
+            // tidak berkompetisi dengan operasi assignment concurrent.
+            $locked = PmChecksheet::withTrashed()
+                ->whereKey($checksheet->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $checksheet->forceDelete();
+            $oldValues = $locked->only(['checksheet_code', 'checksheet_name', 'description', 'is_active']);
+            $checksheetId = $locked->id;
+            $checksheetCode = $locked->checksheet_code;
 
-        $this->activityLog->log(
-            request: $request,
-            moduleName: 'master_checksheet',
-            action: 'delete',
-            description: sprintf('Delete checksheet %s', $checksheetCode),
-            tableName: 'pm_checksheets',
-            recordId: $checksheetId,
-            oldValues: $oldValues,
-        );
+            // Guard 1: masih memiliki assignment aktif saat ini.
+            if ($locked->machineAssignments()->exists()) {
+                throw new DomainException(
+                    'PM Checksheet yang sudah terhubung ke mesin tidak dapat dihapus. '
+                    .'Nonaktifkan checksheet jika tidak lagi digunakan.'
+                );
+            }
+
+            // Guard 2: legacy row — riwayat assignment tidak dapat dipastikan.
+            if (! $locked->assignment_history_known) {
+                throw new DomainException(
+                    'Data operasional lama tidak dapat dihapus permanen karena riwayat penggunaannya '
+                    .'tidak dapat dipastikan. Nonaktifkan checksheet jika tidak lagi digunakan.'
+                );
+            }
+
+            // Guard 3: pernah memiliki assignment (marker terisi) — histori mungkin ada.
+            if ($locked->first_observed_machine_assignment_at !== null) {
+                throw new DomainException(
+                    'PM Checksheet yang sudah terhubung ke mesin tidak dapat dihapus. '
+                    .'Nonaktifkan checksheet jika tidak lagi digunakan.'
+                );
+            }
+
+            // Kondisi lolos: history_known=true, belum pernah punya assignment, tidak ada assignment kini.
+            $locked->forceDelete();
+
+            $this->activityLog->log(
+                request: $request,
+                moduleName: 'master_checksheet',
+                action: 'delete',
+                description: sprintf('Delete checksheet %s', $checksheetCode),
+                tableName: 'pm_checksheets',
+                recordId: $checksheetId,
+                oldValues: $oldValues,
+            );
+        });
     }
 
     /**
@@ -308,6 +343,14 @@ class PmChecksheetService
 
     protected function syncWizardData(PmChecksheet $checksheet, array $payload, Request $request): void
     {
+        // Kunci Checksheet terlebih dahulu untuk menjaga urutan lock konsisten
+        // (Checksheet → Machine ascending) dan mencegah deadlock.
+        // Gunakan instance terkunci sebagai sumber kebenaran untuk marker decision.
+        $lockedChecksheet = PmChecksheet::query()
+            ->whereKey($checksheet->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
         // Normalisasi ID lalu kunci semua Machine sebelum mutation child/config.
         $selectedMachineIds = array_values(array_unique(array_map('intval', $payload['selected_machine_ids'])));
         sort($selectedMachineIds, SORT_NUMERIC);
@@ -332,6 +375,18 @@ class PmChecksheetService
                     'created_by' => $request->user()?->id,
                 ],
             );
+
+            // Stamp marker pertama kali saat assignment baru benar-benar dibuat,
+            // berlaku untuk semua checksheet — termasuk legacy (assignment_history_known=false).
+            // Gunakan nilai dari instance terkunci agar tidak bergantung state in-memory.
+            // Legacy row tetap dilindungi Guard 2 dari deletion meski marker sudah terisi.
+            if ($assignment->wasRecentlyCreated
+                && $lockedChecksheet->first_observed_machine_assignment_at === null
+            ) {
+                $lockedChecksheet->forceFill(['first_observed_machine_assignment_at' => now()])->save();
+                // Perbarui juga instance yang beredar agar iterasi berikutnya tidak double-stamp.
+                $checksheet->first_observed_machine_assignment_at = $lockedChecksheet->first_observed_machine_assignment_at;
+            }
 
             foreach (($parts[$machineId] ?? []) as $partRow) {
                 $part = PmChecksheetPart::query()->updateOrCreate(

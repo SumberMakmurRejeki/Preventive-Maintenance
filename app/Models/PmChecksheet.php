@@ -20,12 +20,16 @@ class PmChecksheet extends Model
         'description',
         'is_active',
         'created_by',
+        'assignment_history_known',
+        'first_observed_machine_assignment_at',
     ];
 
     protected function casts(): array
     {
         return [
             'is_active' => 'boolean',
+            'assignment_history_known' => 'boolean',
+            'first_observed_machine_assignment_at' => 'datetime',
         ];
     }
 

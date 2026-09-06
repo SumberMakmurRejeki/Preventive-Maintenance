@@ -192,9 +192,14 @@ class MasterPmChecksheetTest extends TestCase
         $this->actingAs($this->admin)->patch("/pm/master-checksheet/{$checksheet->id}/nonaktifkan")->assertRedirect('/pm/master-checksheet');
         $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id, 'is_active' => false]);
 
-        $this->actingAs($this->admin)->delete("/pm/master-checksheet/{$checksheet->id}")->assertRedirect('/pm/master-checksheet');
-        $this->assertDatabaseMissing('pm_checksheets', ['id' => $checksheet->id]);
-        $this->assertDatabaseHas('user_activity_logs', ['module_name' => 'master_checksheet', 'action' => 'delete']);
+        // Checksheet ini sudah pernah terhubung ke mesin, sehingga tidak boleh dihapus
+        // meskipun sudah dinonaktifkan. Guard delete menolak dan mengembalikan flash_error.
+        $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$checksheet->id}")
+            ->assertRedirect('/pm/master-checksheet')
+            ->assertSessionHas('flash_error');
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
+        $this->assertDatabaseMissing('user_activity_logs', ['module_name' => 'master_checksheet', 'action' => 'delete']);
     }
 
     public function test_updating_checksheet_keeps_existing_pm_review_data(): void
@@ -401,5 +406,663 @@ class MasterPmChecksheetTest extends TestCase
         $this->assertNotNull($machineLock, 'Selected machines must be locked before synchronization.');
         $this->assertNotNull($childMutation, 'Synchronization must mutate child/config rows.');
         $this->assertLessThan($childMutation, $machineLock);
+    }
+
+    // =========================================================
+    // SLICE 4 — PM Checksheet Historical Delete Protection
+    // =========================================================
+
+    // ---------------------------------------------------------
+    // A. Migration / default semantics
+    // ---------------------------------------------------------
+
+    /**
+     * A: Migrated-style rows (created via raw DB) must default to
+     * assignment_history_known=false and first_observed_machine_assignment_at=NULL.
+     */
+    public function test_s4_a_legacy_row_defaults_history_known_false_and_no_observed_timestamp(): void
+    {
+        // Insert a row bypassing the application service (simulates legacy/migrated row)
+        $id = DB::table('pm_checksheets')->insertGetId([
+            'checksheet_code' => 'LEGACY-DEF',
+            'checksheet_name' => 'Legacy Default Row',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $checksheet = PmChecksheet::query()->findOrFail($id);
+
+        $this->assertFalse(
+            (bool) $checksheet->assignment_history_known,
+            'Raw/migrated row must default to assignment_history_known=false'
+        );
+        $this->assertNull(
+            $checksheet->first_observed_machine_assignment_at,
+            'Raw/migrated row must default to first_observed_machine_assignment_at=NULL'
+        );
+    }
+
+    /**
+     * A: Checksheet created through the normal application service must have
+     * assignment_history_known=true (explicitly set by service, not relying on default).
+     */
+    public function test_s4_a_new_application_checksheet_is_history_known(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
+        $this->actingAs($this->admin)->post('/pm/master-checksheet', [
+            'checksheet_code' => 'PM-NEW-KNOWN',
+            'checksheet_name' => 'New Known Checksheet',
+            'is_active' => '1',
+            'wizard_payload' => json_encode([
+                'selected_machine_ids' => [$this->machine->id],
+                'parts' => [
+                    $this->machine->id => [
+                        ['id' => 'part-k', 'name' => 'Motor K', 'description' => ''],
+                    ],
+                ],
+                'standards' => [
+                    'part-k' => [[
+                        'name' => 'Cek suhu K',
+                        'input_type' => 'number',
+                        'target_value' => 60,
+                        'action_options' => [],
+                        'unit' => 'C',
+                        'is_required' => true,
+                        'is_active' => true,
+                    ]],
+                ],
+                'schedule' => [
+                    'frequency_type' => 'daily',
+                    'operational_from' => '2026-05-21',
+                    'weekly_days' => [],
+                    'monthly_day' => null,
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+        $checksheet = PmChecksheet::query()->where('checksheet_code', 'PM-NEW-KNOWN')->firstOrFail();
+
+        $this->assertTrue(
+            (bool) $checksheet->assignment_history_known,
+            'Application-created checksheet must have assignment_history_known=true'
+        );
+        $this->assertNotNull(
+            $checksheet->first_observed_machine_assignment_at,
+            'Application-created checksheet with a machine assignment must have first_observed_machine_assignment_at set'
+        );
+    }
+
+    // ---------------------------------------------------------
+    // B. Pristine hard-delete (NEW PRISTINE state)
+    // ---------------------------------------------------------
+
+    /**
+     * B: Known-history checksheet with no assignment and no observed timestamp
+     * must be permanently deletable by admin.
+     */
+    public function test_s4_b_pristine_checksheet_can_be_hard_deleted(): void
+    {
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-PRISTINE',
+            'checksheet_name' => 'Pristine Checksheet',
+            'is_active' => true,
+            'assignment_history_known' => true,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$checksheet->id}")
+            ->assertRedirect('/pm/master-checksheet');
+
+        $this->assertDatabaseMissing('pm_checksheets', ['id' => $checksheet->id, 'deleted_at' => null]);
+        // forceDelete means the row is physically absent
+        $this->assertNull(PmChecksheet::withTrashed()->find($checksheet->id));
+    }
+
+    // ---------------------------------------------------------
+    // C. Legacy zero-assignment rejection
+    // ---------------------------------------------------------
+
+    /**
+     * C: Legacy checksheet (assignment_history_known=false) with zero current
+     * assignments must be rejected with the legacy ambiguous copy.
+     */
+    public function test_s4_c_legacy_zero_assignment_delete_rejected(): void
+    {
+        // Raw insert: assignment_history_known defaults false
+        $id = DB::table('pm_checksheets')->insertGetId([
+            'checksheet_code' => 'LEGACY-ZERO',
+            'checksheet_name' => 'Legacy Zero Assignment',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$id}");
+
+        $response->assertRedirect();
+        $this->assertStringContainsString(
+            'Data operasional lama tidak dapat dihapus permanen',
+            session('flash_error') ?? '',
+            'Legacy ambiguous rejection must return the expected business copy'
+        );
+
+        // Checksheet must still exist
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $id]);
+    }
+
+    // ---------------------------------------------------------
+    // D. Current assignment blocks delete
+    // ---------------------------------------------------------
+
+    /**
+     * D: Checksheet with any current machine assignment must be rejected with
+     * the known-assignment copy, regardless of schedule/occurrence state.
+     */
+    public function test_s4_d_current_assignment_blocks_delete(): void
+    {
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-ASSIGNED',
+            'checksheet_name' => 'Assigned Checksheet',
+            'is_active' => true,
+            'assignment_history_known' => true,
+        ]);
+
+        PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $this->machine->id,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$checksheet->id}");
+
+        $response->assertRedirect();
+        $this->assertStringContainsString(
+            'PM Checksheet yang sudah terhubung ke mesin tidak dapat dihapus',
+            session('flash_error') ?? '',
+            'Known assignment rejection must return the expected business copy'
+        );
+
+        // Checksheet and assignment must still exist
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
+        $this->assertDatabaseHas('pm_checksheet_machines', [
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $this->machine->id,
+        ]);
+    }
+
+    // ---------------------------------------------------------
+    // E. First assignment provenance (marker stamped atomically)
+    // ---------------------------------------------------------
+
+    /**
+     * E: Creating a genuinely new Machine assignment on a known-pristine
+     * checksheet must populate first_observed_machine_assignment_at exactly once.
+     */
+    public function test_s4_e_first_assignment_stamps_observed_timestamp(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
+        $this->actingAs($this->admin)->post('/pm/master-checksheet', [
+            'checksheet_code' => 'PM-PROVENANCE',
+            'checksheet_name' => 'Provenance Checksheet',
+            'is_active' => '1',
+            'wizard_payload' => json_encode([
+                'selected_machine_ids' => [$this->machine->id],
+                'parts' => [
+                    $this->machine->id => [
+                        ['id' => 'part-prov', 'name' => 'Motor', 'description' => ''],
+                    ],
+                ],
+                'standards' => [
+                    'part-prov' => [[
+                        'name' => 'Cek suhu',
+                        'input_type' => 'number',
+                        'target_value' => 60,
+                        'action_options' => [],
+                        'unit' => 'C',
+                        'is_required' => true,
+                        'is_active' => true,
+                    ]],
+                ],
+                'schedule' => [
+                    'frequency_type' => 'daily',
+                    'operational_from' => '2026-05-21',
+                    'weekly_days' => [],
+                    'monthly_day' => null,
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+        $checksheet = PmChecksheet::query()->where('checksheet_code', 'PM-PROVENANCE')->firstOrFail();
+
+        $this->assertTrue(
+            (bool) $checksheet->assignment_history_known,
+            'Newly created checksheet must remain history_known=true'
+        );
+        $this->assertNotNull(
+            $checksheet->first_observed_machine_assignment_at,
+            'First assignment must populate first_observed_machine_assignment_at'
+        );
+    }
+
+    // ---------------------------------------------------------
+    // F. Marker immutability (subsequent assignment update)
+    // ---------------------------------------------------------
+
+    /**
+     * F: Re-saving the checksheet (update) or adding a second assignment must NOT
+     * overwrite the original first_observed_machine_assignment_at timestamp.
+     */
+    public function test_s4_f_marker_immutable_on_subsequent_update(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
+        // Create with first assignment
+        $this->actingAs($this->admin)->post('/pm/master-checksheet', [
+            'checksheet_code' => 'PM-IMMUTABLE',
+            'checksheet_name' => 'Immutable Checksheet',
+            'is_active' => '1',
+            'wizard_payload' => json_encode([
+                'selected_machine_ids' => [$this->machine->id],
+                'parts' => [$this->machine->id => [['id' => 'p1', 'name' => 'PartA', 'description' => '']]],
+                'standards' => ['p1' => [['name' => 'S1', 'input_type' => 'number', 'target_value' => 1, 'action_options' => [], 'unit' => null, 'is_required' => true, 'is_active' => true]]],
+                'schedule' => ['frequency_type' => 'daily', 'operational_from' => '2026-05-21', 'weekly_days' => [], 'monthly_day' => null],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+        $checksheet = PmChecksheet::query()->where('checksheet_code', 'PM-IMMUTABLE')->firstOrFail();
+        $originalTimestamp = $checksheet->first_observed_machine_assignment_at;
+        $this->assertNotNull($originalTimestamp);
+
+        // Advance time and create a second machine
+        $location2 = Location::query()->create(['location_code' => 'LOC-F2', 'location_name' => 'Line F2', 'is_active' => true]);
+        $machine2 = Machine::query()->create([
+            'location_id' => $location2->id,
+            'machine_code' => 'MC-F2',
+            'machine_name' => 'Machine F2',
+            'qr_token' => 'qr-mc-f2',
+            'is_active' => true,
+        ]);
+
+        Carbon::setTestNow(Carbon::parse('2026-06-01 00:00:00', 'Asia/Jakarta'));
+
+        // Update to include a second machine
+        $this->actingAs($this->admin)->put("/pm/master-checksheet/{$checksheet->id}", [
+            'checksheet_code' => 'PM-IMMUTABLE',
+            'checksheet_name' => 'Immutable Checksheet',
+            'is_active' => '1',
+            'wizard_payload' => json_encode([
+                'selected_machine_ids' => [$this->machine->id, $machine2->id],
+                'parts' => [
+                    $this->machine->id => [['id' => 'p1', 'name' => 'PartA', 'description' => '']],
+                    $machine2->id => [['id' => 'p2', 'name' => 'PartB', 'description' => '']],
+                ],
+                'standards' => [
+                    'p1' => [['name' => 'S1', 'input_type' => 'number', 'target_value' => 1, 'action_options' => [], 'unit' => null, 'is_required' => true, 'is_active' => true]],
+                    'p2' => [['name' => 'S2', 'input_type' => 'number', 'target_value' => 2, 'action_options' => [], 'unit' => null, 'is_required' => true, 'is_active' => true]],
+                ],
+                'schedule' => ['frequency_type' => 'daily', 'operational_from' => '2026-06-01', 'weekly_days' => [], 'monthly_day' => null],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+        $checksheet->refresh();
+        $this->assertEquals(
+            $originalTimestamp->toDateTimeString(),
+            $checksheet->first_observed_machine_assignment_at->toDateTimeString(),
+            'Original first_observed_machine_assignment_at must not be overwritten on subsequent update'
+        );
+    }
+
+    // ---------------------------------------------------------
+    // G. Legacy remains ambiguous after new assignment
+    // ---------------------------------------------------------
+
+    /**
+     * G: A legacy checksheet (assignment_history_known=false) must NOT become
+     * pristine even after receiving a new post-instrumentation assignment.
+     * After removing the current assignment, the delete must still be rejected
+     * with the legacy-specific copy — proving Guard 2 fires, not Guard 1.
+     */
+    public function test_s4_g_legacy_checksheet_remains_ambiguous_after_new_assignment(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
+        // Create as legacy row: assignment_history_known = false (raw insert)
+        $id = DB::table('pm_checksheets')->insertGetId([
+            'checksheet_code' => 'PM-LEGACY-NEW-ASSIGN',
+            'checksheet_name' => 'Legacy Gets New Assignment',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $checksheet = PmChecksheet::query()->findOrFail($id);
+
+        // Update through the application service — adds assignment to this legacy checksheet
+        $this->actingAs($this->admin)->put("/pm/master-checksheet/{$checksheet->id}", [
+            'checksheet_code' => 'PM-LEGACY-NEW-ASSIGN',
+            'checksheet_name' => 'Legacy Gets New Assignment',
+            'is_active' => '1',
+            'wizard_payload' => json_encode([
+                'selected_machine_ids' => [$this->machine->id],
+                'parts' => [$this->machine->id => [['id' => 'pg', 'name' => 'PartG', 'description' => '']]],
+                'standards' => ['pg' => [['name' => 'SG', 'input_type' => 'number', 'target_value' => 1, 'action_options' => [], 'unit' => null, 'is_required' => true, 'is_active' => true]]],
+                'schedule' => ['frequency_type' => 'daily', 'operational_from' => '2026-05-21', 'weekly_days' => [], 'monthly_day' => null],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+
+        $checksheet->refresh();
+
+        $this->assertFalse(
+            (bool) $checksheet->assignment_history_known,
+            'Legacy checksheet must never become assignment_history_known=true'
+        );
+
+        // Spec: legacy row receives first_observed_machine_assignment_at when an instrumented
+        // new assignment is created, but remains non-deletable via Guard 2.
+        $this->assertNotNull(
+            $checksheet->first_observed_machine_assignment_at,
+            'Legacy checksheet should receive marker timestamp on new instrumented assignment'
+        );
+
+        // Remove the current assignment so Guard 1 does NOT fire —
+        // we want to prove Guard 2 rejects, not Guard 1.
+        PmChecksheetMachine::query()
+            ->where('pm_checksheet_id', $checksheet->id)
+            ->delete();
+
+        $this->assertCount(
+            0,
+            $checksheet->machineAssignments()->get(),
+            'Assignment must be removed before testing Guard 2'
+        );
+
+        // Delete must be rejected by Guard 2 (legacy ambiguity), not Guard 1.
+        $response = $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$checksheet->id}");
+        $response->assertRedirect();
+        $this->assertStringContainsString(
+            'Data operasional lama tidak dapat dihapus permanen',
+            session('flash_error') ?? '',
+            'Guard 2 must reject legacy row with the legacy-specific business copy'
+        );
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
+    }
+
+    // ---------------------------------------------------------
+    // H. Rollback atomicity
+    // ---------------------------------------------------------
+
+    /**
+     * H: If an exception occurs during the assignment + marker path, both the
+     * assignment row and the marker update must roll back atomically.
+     *
+     * Strategy: use a beforeExecuting hook to throw after the marker UPDATE
+     * SQL is detected but before the transaction commits. We assert the hook
+     * actually fired so the test cannot pass silently without exercising the
+     * atomicity boundary.
+     */
+    public function test_s4_h_assignment_and_marker_roll_back_together(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
+        // Create pristine checksheet with no assignments
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-ROLLBACK',
+            'checksheet_name' => 'Rollback Test Checksheet',
+            'is_active' => true,
+            'assignment_history_known' => true,
+        ]);
+
+        $markerUpdateSeen = false;
+        DB::connection()->beforeExecuting(function (string $sql) use (&$markerUpdateSeen): void {
+            if (! $markerUpdateSeen
+                && str_contains(strtolower($sql), 'update')
+                && str_contains(strtolower($sql), 'pm_checksheets')
+                && str_contains(strtolower($sql), 'first_observed_machine_assignment_at')
+            ) {
+                $markerUpdateSeen = true;
+                throw new \RuntimeException('Controlled rollback injection for test_s4_h');
+            }
+        });
+
+        try {
+            $this->actingAs($this->admin)->post('/pm/master-checksheet', [
+                'checksheet_code' => 'PM-ROLLBACK-ASSIGN',
+                'checksheet_name' => 'Rollback Assign Attempt',
+                'is_active' => '1',
+                'wizard_payload' => json_encode([
+                    'selected_machine_ids' => [$this->machine->id],
+                    'parts' => [$this->machine->id => [['id' => 'ph', 'name' => 'PartH', 'description' => '']]],
+                    'standards' => ['ph' => [['name' => 'SH', 'input_type' => 'number', 'target_value' => 1, 'action_options' => [], 'unit' => null, 'is_required' => true, 'is_active' => true]]],
+                    'schedule' => ['frequency_type' => 'daily', 'operational_from' => '2026-05-21', 'weekly_days' => [], 'monthly_day' => null],
+                ], JSON_THROW_ON_ERROR),
+            ]);
+        } catch (\Throwable) {
+            // Exception is expected due to the rollback injection
+        }
+
+        // The hook MUST have fired — otherwise the test proves nothing about atomicity.
+        $this->assertTrue($markerUpdateSeen, 'beforeExecuting hook must fire at the marker UPDATE');
+
+        // Because the hook threw inside the outer DB::transaction wrapping create(),
+        // the whole transaction rolls back: the new checksheet row must be absent.
+        $this->assertNull(
+            PmChecksheet::withTrashed()->where('checksheet_code', 'PM-ROLLBACK-ASSIGN')->first(),
+            'Rolled-back checksheet row must be absent; transaction did not commit'
+        );
+
+        // The original checksheet must be unchanged
+        $this->assertDatabaseHas('pm_checksheets', [
+            'id' => $checksheet->id,
+            'checksheet_code' => 'PM-ROLLBACK',
+        ]);
+    }
+
+    // ---------------------------------------------------------
+    // I. Protected descendants survive rejection
+    // ---------------------------------------------------------
+
+    /**
+     * I: Checksheet with protected descendants (execution in waiting_review)
+     * must be rejected; all descendants must survive intact.
+     */
+    public function test_s4_i_protected_descendants_survive_delete_rejection(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
+        $this->test_admin_can_create_checksheet_with_nested_data();
+
+        $checksheet = PmChecksheet::query()->where('checksheet_code', 'PM-CH-001')->firstOrFail();
+        $scheduleDate = PmScheduleDate::query()->firstOrFail();
+        $scheduleDate->forceFill(['status' => 'waiting_review'])->save();
+
+        $execution = PmExecution::query()->create([
+            'pm_schedule_date_id' => $scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'waiting_review',
+            'started_at' => now()->subHour(),
+            'submitted_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$checksheet->id}");
+
+        $response->assertRedirect();
+
+        // All protected descendants must survive
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
+        $this->assertDatabaseHas('pm_executions', ['id' => $execution->id, 'status' => 'waiting_review']);
+        $this->assertDatabaseHas('pm_schedule_dates', ['id' => $scheduleDate->id, 'status' => 'waiting_review']);
+    }
+
+    // ---------------------------------------------------------
+    // J. Lifecycle regression: deactivate / activate / update
+    // ---------------------------------------------------------
+
+    /**
+     * J: Deactivate, activate, and update must remain functional
+     * after the delete guard is added. This proves the guard does not
+     * break other lifecycle operations.
+     */
+    public function test_s4_j_lifecycle_operations_remain_functional(): void
+    {
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-LIFECYCLE',
+            'checksheet_name' => 'Lifecycle Checksheet',
+            'is_active' => true,
+            'assignment_history_known' => true,
+        ]);
+
+        // Deactivate
+        $this->actingAs($this->admin)
+            ->patch("/pm/master-checksheet/{$checksheet->id}/nonaktifkan")
+            ->assertRedirect('/pm/master-checksheet');
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id, 'is_active' => false]);
+
+        // Activate
+        $this->actingAs($this->admin)
+            ->patch("/pm/master-checksheet/{$checksheet->id}/aktifkan")
+            ->assertRedirect('/pm/master-checksheet');
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id, 'is_active' => true]);
+
+        // Update metadata
+        // Update metadata — requires a valid wizard payload per validation rules
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+        $this->actingAs($this->admin)->put("/pm/master-checksheet/{$checksheet->id}", [
+            'checksheet_code' => 'PM-LIFECYCLE',
+            'checksheet_name' => 'Lifecycle Updated',
+            'is_active' => '1',
+            'wizard_payload' => json_encode([
+                'selected_machine_ids' => [$this->machine->id],
+                'parts' => [$this->machine->id => [['id' => 'pj', 'name' => 'PartJ', 'description' => '']]],
+                'standards' => ['pj' => [['name' => 'SJ', 'input_type' => 'number', 'target_value' => 1, 'action_options' => [], 'unit' => null, 'is_required' => true, 'is_active' => true]]],
+                'schedule' => ['frequency_type' => 'daily', 'operational_from' => '2026-05-21', 'weekly_days' => [], 'monthly_day' => null],
+            ], JSON_THROW_ON_ERROR),
+        ])->assertRedirect("/pm/master-checksheet/{$checksheet->id}");
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id, 'checksheet_name' => 'Lifecycle Updated']);
+    }
+    // ---------------------------------------------------------
+
+    /**
+     * K: Non-admin (operator) delete attempt must be rejected by existing
+     * authorization middleware, unchanged by the new delete guard.
+     */
+    public function test_s4_k_non_admin_delete_is_rejected_by_authorization(): void
+    {
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-AUTHZ',
+            'checksheet_name' => 'Authorization Checksheet',
+            'is_active' => true,
+            'assignment_history_known' => true,
+        ]);
+
+        $this->actingAs($this->operator)
+            ->delete("/pm/master-checksheet/{$checksheet->id}")
+            ->assertRedirect('/403');
+
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
+    }
+
+    // ---------------------------------------------------------
+    // L. Repeated rejection is idempotent / zero-destructive
+    // ---------------------------------------------------------
+
+    /**
+     * L: Two repeated delete attempts on a protected checksheet must both be
+     * rejected with zero mutation and no successful-delete activity log entry.
+     */
+    public function test_s4_l_repeated_delete_rejection_is_zero_destructive(): void
+    {
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-REPEAT',
+            'checksheet_name' => 'Repeated Rejection Checksheet',
+            'is_active' => true,
+            'assignment_history_known' => true,
+        ]);
+
+        PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $this->machine->id,
+        ]);
+
+        // Capture all columns before any delete attempt
+        $before = PmChecksheet::query()->findOrFail($checksheet->id)->toArray();
+
+        // First attempt
+        $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$checksheet->id}")
+            ->assertRedirect();
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
+
+        // Second attempt
+        $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$checksheet->id}")
+            ->assertRedirect();
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
+
+        // Row state must be identical after both rejections
+        $after = PmChecksheet::query()->findOrFail($checksheet->id)->toArray();
+        $this->assertSame(
+            $before['checksheet_code'],
+            $after['checksheet_code'],
+            'Checksheet code must be unchanged after repeated rejection'
+        );
+        $this->assertSame(
+            $before['is_active'],
+            $after['is_active'],
+            'is_active must be unchanged after repeated rejection'
+        );
+
+        // No successful-delete activity log
+        $this->assertDatabaseMissing('user_activity_logs', [
+            'module_name' => 'master_checksheet',
+            'action' => 'delete',
+            'record_id' => $checksheet->id,
+        ]);
+    }
+
+    // ---------------------------------------------------------
+    // M. Guard 3 isolated — formerly-assigned with no current assignment
+    // ---------------------------------------------------------
+
+    /**
+     * M: A checksheet with assignment_history_known=true and
+     * first_observed_machine_assignment_at set, but zero current machine
+     * assignments, must be rejected by Guard 3 with the known-assignment copy.
+     *
+     * This isolates Guard 3 from Guards 1 and 2 so that removing Guard 3
+     * would cause this test to fail.
+     */
+    public function test_s4_m_formerly_assigned_checksheet_rejected_by_guard3(): void
+    {
+        // Pristine but with marker set — simulates a checksheet whose
+        // assignment was deleted outside the application service layer
+        // (e.g. test teardown, direct DB cleanup) while marker is preserved.
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-GUARD3',
+            'checksheet_name' => 'Guard 3 Isolation Checksheet',
+            'is_active' => true,
+            'assignment_history_known' => true,
+            'first_observed_machine_assignment_at' => now()->subDay(),
+        ]);
+
+        // Explicitly confirm: no current assignment exists (Guard 1 must not fire).
+        $this->assertCount(0, $checksheet->machineAssignments()->get(), 'Fixture must have zero assignments');
+
+        $response = $this->actingAs($this->admin)
+            ->delete("/pm/master-checksheet/{$checksheet->id}");
+
+        $response->assertRedirect();
+        $this->assertStringContainsString(
+            'PM Checksheet yang sudah terhubung ke mesin tidak dapat dihapus',
+            session('flash_error') ?? '',
+            'Guard 3 must reject formerly-assigned checksheet with the known-assignment copy'
+        );
+        $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
     }
 }
