@@ -7,6 +7,8 @@ use App\Models\PmExecution;
 use App\Models\PmExecutionMedia;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -67,17 +69,62 @@ class PmExecutionMediaService
         ]);
     }
 
+    /**
+     * Hapus media PM dengan proteksi lifecycle.
+     * Kunci execution (lockForUpdate) sebelum media agar submit bersamaan
+     * tidak dapat meloloskan penghapusan saat status bukan in_progress.
+     *
+     * @throws ValidationException
+     */
     public function deleteMedia(PmExecutionMedia $media): void
     {
-        if ($media->file_path !== '') {
-            Storage::disk('public')->delete($media->file_path);
-        }
+        // Mutasi database dilakukan di dalam transaksi; cleanup filesystem hanya setelah commit berhasil.
+        $pathsToClean = [];
 
-        if ($media->original_file_path) {
-            Storage::disk('public')->delete($media->original_file_path);
-        }
+        DB::transaction(function () use ($media, &$pathsToClean): void {
+            // ADR-003: kunci execution lebih dahulu agar media tidak dihapus setelah menjadi bukti transaksi.
+            // Urutan kunci: 1) execution 2) media 3) mutasi, sesuai protokol serialisasi submit/delete.
+            $execution = PmExecution::query()->lockForUpdate()->findOrFail($media->pm_execution_id);
+            $lockedMedia = PmExecutionMedia::query()->lockForUpdate()->findOrFail($media->id);
 
-        $media->delete();
+            // Hanya status in_progress yang diizinkan menghapus media.
+            if ($execution->status !== 'in_progress') {
+                throw ValidationException::withMessages([
+                    'media' => 'Media PM hanya dapat dihapus saat PM sedang dikerjakan.',
+                ]);
+            }
+
+            // Snapshot path sebelum delete dan deduplikasi agar path yang sama tidak dihapus dua kali.
+            $paths = array_values(array_unique(array_filter([
+                $lockedMedia->file_path !== '' ? $lockedMedia->file_path : null,
+                $lockedMedia->original_file_path ?: null,
+            ])));
+
+            // Hapus baris media dalam database; filesystem cleanup berada di luar transaksi.
+            $lockedMedia->delete();
+            $pathsToClean = $paths;
+        });
+
+        // Kegagalan cleanup dicatat sebagai warning dan tidak membatalkan lifecycle setelah commit.
+        foreach ($pathsToClean as $path) {
+            try {
+                $deleted = Storage::disk('public')->delete($path);
+                if ($deleted === false) {
+                    Log::warning('Media PM cleanup failed: Storage::delete() returned false', [
+                        'pm_execution_id' => $media->pm_execution_id,
+                        'pm_execution_media_id' => $media->id,
+                        'path' => $path,
+                        'error' => 'Storage::delete() returned false',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Media PM cleanup failed: exception during Storage::delete()', [
+                    'pm_execution_id' => $media->pm_execution_id,
+                    'pm_execution_media_id' => $media->id,
+                    'path' => $path,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 }
-

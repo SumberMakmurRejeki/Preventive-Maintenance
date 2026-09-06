@@ -113,6 +113,8 @@ class PmExecutionService
         array $mediaFiles = [],
     ): PmExecution {
         return DB::transaction(function () use ($request, $machine, $operator, $actionValues, $numberValues, $partNotes, $mediaFiles): PmExecution {
+            // Resolver identity selalu membaca ulang parent dan occurrence dari database;
+            // context dari halaman/controller hanya snapshot dan tidak menjadi sumber keputusan.
             $context = $this->getExecutorContext($machine);
             $scheduleDate = $context['schedule_date'];
 
@@ -123,6 +125,19 @@ class PmExecutionService
             }
 
             $execution = $this->startExecutionOnly($request, $machine, $operator, $context);
+
+            // Kunci execution tetap dipertahankan sampai transaction outer selesai agar
+            // mutation item/media tidak berjalan terhadap lifecycle yang sudah berubah.
+            $lockedExecution = PmExecution::query()->lockForUpdate()->findOrFail($execution->id);
+
+            // Verifikasi status tersimpan sebelum mutasi draft apa pun.
+            if ($lockedExecution->status !== 'in_progress') {
+                throw ValidationException::withMessages([
+                    'machine' => 'PM sudah tidak dalam status aktif; submit ditolak.',
+                ]);
+            }
+
+            $execution = $lockedExecution;
 
             $this->persistExecutionItems($execution, $context['parts'], $actionValues, $numberValues, $partNotes);
             $this->persistMediaFiles($execution, $context['parts'], $mediaFiles, $operator, $partNotes);
