@@ -118,6 +118,10 @@ Route::middleware(['prime.auth', 'prime.operator.session'])->group(function (): 
         Route::get('/create', [MasterPmChecksheetController::class, 'create'])->name('master-checksheet.create');
         Route::post('/', [MasterPmChecksheetController::class, 'store'])->name('master-checksheet.store');
         Route::post('/{id}/reconcile-schedule-dates', [MasterPmChecksheetController::class, 'reconcileScheduleDates'])->name('master-checksheet.reconcile-schedule-dates');
+        // Slice 2: preview (tanpa tulis DB) dan apply (dengan transaksi + lock)
+        // untuk update jadwal PM dari halaman edit wizard.
+        Route::post('/{id}/preview-schedule-update', [MasterPmChecksheetController::class, 'previewScheduleUpdate'])->name('master-checksheet.preview-schedule-update');
+        Route::post('/{id}/apply-schedule-update', [MasterPmChecksheetController::class, 'applyScheduleUpdate'])->name('master-checksheet.apply-schedule-update');
         Route::get('/{id}', [MasterPmChecksheetController::class, 'show'])->name('master-checksheet.show');
         Route::get('/{id}/edit', [MasterPmChecksheetController::class, 'edit'])->name('master-checksheet.edit');
         Route::put('/{id}', [MasterPmChecksheetController::class, 'update'])->name('master-checksheet.update');

@@ -1,5 +1,6 @@
 import './bootstrap';
 import './pages/calendar';
+import { renderScheduleImpact } from './checksheet-impact';
 import { escapeHtml } from './safe-html';
 
 const webPushDeniedStorageKey = 'prime.webpush.permission-denied';
@@ -2047,10 +2048,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const frequencyInput = checksheetWizardRoot.querySelector('[data-schedule-frequency]');
         const weeklyDaysWrap = checksheetWizardRoot.querySelector('[data-weekly-days]');
         const monthlyDayInput = checksheetWizardRoot.querySelector('[data-monthly-day]');
-        const startDateInput = checksheetWizardRoot.querySelector('[data-schedule-start]');
-        const endDateInput = checksheetWizardRoot.querySelector('[data-schedule-end]');
+        const operationalDateInput = checksheetWizardRoot.querySelector('[data-schedule-operational]');
         const previewWrap = checksheetWizardRoot.querySelector('[data-schedule-preview]');
         const reviewBox = checksheetWizardRoot.querySelector('[data-review-box]');
+        const editId = checksheetWizardRoot.getAttribute('data-edit-id');
+        const previewUrl = checksheetWizardRoot.getAttribute('data-preview-url');
+        const applyUrl = checksheetWizardRoot.getAttribute('data-apply-url');
+        const scheduleStatus = checksheetWizardRoot.querySelector('[data-schedule-status]');
+        const scheduleImpact = checksheetWizardRoot.querySelector('[data-schedule-impact]');
+        const applyButton = checksheetWizardRoot.querySelector('[data-apply-schedule]');
+        const applyStatus = checksheetWizardRoot.querySelector('[data-apply-status]');
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 
         const dayLabels = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
         let currentStep = 1;
@@ -2058,13 +2066,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const state = {
             selectedMachineIds: payloadSeed.selected_machine_ids ?? [],
             parts: payloadSeed.parts ?? {},
-            standards: payloadSeed.standards ?? {},
+            // Server mengirim standards: [] (array kosong) saat checksheet belum memiliki
+            // part/standard. Assignment key dinamis (partId) pada Array diabaikan
+            // oleh JSON.stringify, sehingga payload ke server selalu "[]". Normalisasi
+            // ke plain object agar key yang ditambahkan wizard tetap tersimpan.
+            standards: Array.isArray(payloadSeed.standards) ? {} : (payloadSeed.standards ?? {}),
             schedule: payloadSeed.schedule ?? {
                 frequency_type: '',
                 weekly_days: [],
                 monthly_day: null,
-                start_date: '',
-                generate_until: '',
+                operational_from: '',
             },
         };
 
@@ -2164,8 +2175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const renderSchedule = () => {
             frequencyInput.value = state.schedule.frequency_type ?? '';
             monthlyDayInput.value = state.schedule.monthly_day ?? '';
-            startDateInput.value = state.schedule.start_date ?? '';
-            endDateInput.value = state.schedule.generate_until ?? '';
+            operationalDateInput.value = state.schedule.operational_from ?? '';
             weeklyWrap.classList.toggle('hidden', state.schedule.frequency_type !== 'weekly');
             monthlyWrap.classList.toggle('hidden', state.schedule.frequency_type !== 'monthly');
             weeklyDaysWrap.innerHTML = dayLabels.map((label, index) => `<label><input type="checkbox" value="${index}" ${state.schedule.weekly_days?.includes(index) ? 'checked' : ''} data-weekday> ${label}</label>`).join('');
@@ -2174,17 +2184,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const renderPreview = () => {
             const frequencyType = state.schedule.frequency_type;
-            const start = state.schedule.start_date;
-            const end = state.schedule.generate_until;
+            const operationalFrom = state.schedule.operational_from;
+            const planningEnd = planningEndFor(operationalFrom);
 
-            if (! frequencyType || ! start || ! end) {
+            if (! frequencyType || ! operationalFrom || ! planningEnd) {
                 previewWrap.innerHTML = '<p class="text-sm text-[var(--color-prime-muted)]">Isi form jadwal secara lengkap untuk melihat preview.</p>';
                 return;
             }
 
             const dates = [];
-            let cursor = new Date(start);
-            const endDate = new Date(end);
+            let cursor = new Date(operationalFrom);
+            const endDate = new Date(planningEnd);
+            endDate.setHours(23, 59, 59, 999);
             let guard = 0;
 
             while (cursor <= endDate && dates.length < 10 && guard < 1000) {
@@ -2215,12 +2226,29 @@ document.addEventListener('DOMContentLoaded', () => {
             previewWrap.innerHTML = dates.map((date) => `<span class="rounded-full border border-[var(--color-prime-border)] bg-white px-3 py-1 text-sm text-[var(--color-prime-muted)]">${date.toLocaleDateString('id-ID', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>`).join('');
         };
 
+        const planningEndFor = (operationalFrom) => {
+            if (! operationalFrom) {
+                return '';
+            }
+            const start = new Date(operationalFrom);
+            const targetMonth = start.getUTCMonth() + 12;
+            const year = start.getUTCFullYear() + Math.floor(targetMonth / 12);
+            const month = targetMonth % 12;
+            const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+            const day = Math.min(start.getUTCDate(), lastDay);
+            const end = new Date(Date.UTC(year, month, day));
+            const iso = end.toISOString().slice(0, 10);
+
+            return iso;
+        };
+
         const renderReview = () => {
             const machineNames = state.selectedMachineIds.map((id) => machineSeed.find((machine) => machine.id === id)?.code).join(', ');
             const partCount = state.selectedMachineIds.reduce((carry, machineId) => carry + (state.parts[machineId] ?? []).length, 0);
             const standardCount = Object.values(state.standards).reduce((carry, rows) => carry + rows.length, 0);
+            const planningEnd = planningEndFor(state.schedule.operational_from);
 
-            reviewBox.innerHTML = `<div class="grid gap-4 md:grid-cols-2"><div><p class="text-sm text-[var(--color-prime-muted)]">Mesin</p><p class="font-semibold">${escapeHtml(machineNames || '-')}</p><p class="mt-3 text-sm text-[var(--color-prime-muted)]">Part</p><p class="font-semibold">${partCount} Part</p><p class="mt-3 text-sm text-[var(--color-prime-muted)]">Standard</p><p class="font-semibold">${standardCount} Standard</p></div><div><p class="text-sm text-[var(--color-prime-muted)]">Frekuensi</p><p class="font-semibold">${escapeHtml(state.schedule.frequency_type || '-')}</p><p class="mt-3 text-sm text-[var(--color-prime-muted)]">Mulai</p><p class="font-semibold">${escapeHtml(state.schedule.start_date || '-')}</p><p class="mt-3 text-sm text-[var(--color-prime-muted)]">Sampai</p><p class="font-semibold">${escapeHtml(state.schedule.generate_until || '-')}</p></div></div>`;
+            reviewBox.innerHTML = `<div class="grid gap-4 md:grid-cols-2"><div><p class="text-sm text-[var(--color-prime-muted)]">Mesin</p><p class="font-semibold">${escapeHtml(machineNames || '-')}</p><p class="mt-3 text-sm text-[var(--color-prime-muted)]">Part</p><p class="font-semibold">${partCount} Part</p><p class="mt-3 text-sm text-[var(--color-prime-muted)]">Standard</p><p class="font-semibold">${standardCount} Standard</p></div><div><p class="text-sm text-[var(--color-prime-muted)]">Frekuensi</p><p class="font-semibold">${escapeHtml(state.schedule.frequency_type || '-')}</p><p class="mt-3 text-sm text-[var(--color-prime-muted)]">Mulai Jadwal PRIME</p><p class="font-semibold">${escapeHtml(state.schedule.operational_from || '-')}</p><p class="mt-3 text-sm text-[var(--color-prime-muted)]">Berakhir</p><p class="font-semibold">${escapeHtml(planningEnd || '-')}</p></div></div>`;
         };
 
         const validateStep = () => {
@@ -2240,8 +2268,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (currentStep === 5) {
-                if (! state.schedule.frequency_type || ! state.schedule.start_date || ! state.schedule.generate_until) {
-                    window.alert('Lengkapi konfigurasi jadwal PM.');
+                const legacyNullEdit = Boolean(editId) && ! state.schedule.operational_from;
+                // Edit legacy tanpa tanggal operasional boleh lanjut agar server menampilkan status unresolved.
+                if (! state.schedule.frequency_type || (! state.schedule.operational_from && ! legacyNullEdit)) {
+                    window.alert('Lengkapi konfigurasi jadwal PM (frekuensi dan tanggal mulai jadwal PRIME).');
                     return false;
                 }
             }
@@ -2249,6 +2279,183 @@ document.addEventListener('DOMContentLoaded', () => {
             return true;
         };
 
+
+        let previewToken = '';
+        let scheduleApplied = false;
+        // Penanda bahwa notice stale sedang aktif — mencegah runServerPreview() menimpa notice
+        // dan menjaga pesan bisnis tetap terlihat sampai Admin menerapkan preview terbaru.
+        let staleNoticeActive = false;
+
+        // Render notice stale ke slot applyStatus agar tidak tertimpa oleh status preview.
+        // Copy bisnis — jangan pernah tampilkan jargon backend (409/token/fingerprint).
+        const renderStaleNotice = () => {
+            if (! applyStatus) {
+                return;
+            }
+            applyStatus.textContent = 'Jadwal telah berubah sejak pratinjau dibuat. Pratinjau telah diperbarui berdasarkan kondisi terbaru.';
+            applyStatus.className = 'rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900';
+            applyStatus.classList.remove('hidden');
+        };
+
+
+        // Panel status server dipakai hanya pada mode edit agar create tetap dapat disimpan sebagai master.
+        const renderServerStatus = (message, variant = 'info') => {
+            if (! scheduleStatus) {
+                return;
+            }
+            const styles = {
+                amber: 'border-amber-300 bg-amber-50 text-amber-900',
+                red: 'border-red-300 bg-red-50 text-red-900',
+                green: 'border-emerald-300 bg-emerald-50 text-emerald-900',
+                info: 'border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] text-[var(--color-prime-ink)]',
+            };
+            scheduleStatus.className = `rounded-xl border p-4 ${styles[variant] ?? styles.info}`;
+            scheduleStatus.textContent = message;
+            scheduleStatus.classList.remove('hidden');
+        };
+
+        const renderImpact = (impact = {}) => {
+            if (! scheduleImpact) {
+                return;
+            }
+
+            renderScheduleImpact(scheduleImpact, impact);
+        };
+
+        // Parse response JSON secara defensif; kembalikan null jika response bukan JSON valid
+        // untuk mencegah kebocoran SyntaxError / HTML deprecation ke Admin.
+        const safeParseJson = async (response) => {
+            const contentType = response.headers.get('content-type') ?? '';
+            if (! contentType.includes('application/json')) {
+                return null;
+            }
+            try {
+                return await response.json();
+            } catch {
+                return null;
+            }
+        };
+
+        const runServerPreview = async () => {
+            if (! editId || ! previewUrl || scheduleApplied) {
+                return;
+            }
+            collectPayload();
+            previewToken = '';
+            applyButton?.classList.add('hidden');
+            applyButton?.setAttribute('disabled', 'disabled');
+            // Jangan sembunyikan notice stale selama preview authoritative sedang dimuat.
+            if (! staleNoticeActive) {
+                applyStatus?.classList.add('hidden');
+            }
+            renderServerStatus('Memuat preview perubahan jadwal...', 'info');
+            try {
+                const response = await fetch(previewUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ wizard_payload: payloadInput.value }),
+                });
+                // Parse defensif — jangan tampilkan raw SyntaxError/HTML ke Admin
+                const result = await safeParseJson(response);
+                if (result === null) {
+                    renderServerStatus('Pratinjau jadwal tidak dapat dimuat. Silakan coba kembali.', 'red');
+                    return;
+                }
+                if (! response.ok) {
+                    renderServerStatus(result.message ?? 'Preview jadwal gagal dimuat.', 'red');
+                    return;
+                }
+                previewToken = result.token ?? '';
+                renderImpact(result.impact ?? {});
+                if (result.status === 'unresolved') {
+                    renderServerStatus('Jadwal ini belum memiliki tanggal awal operasional (legacy). Simpan sebagai data master saja — jadwal tidak akan disinkronkan.', 'amber');
+                } else if (result.status === 'zero') {
+                    renderServerStatus('Tidak ada perubahan jadwal yang perlu diterapkan. Tombol terapkan tetap aktif untuk inisialisasi jadwal baru.', 'info');
+                    // Bug-fix TASK-002: status=zero + token non-kosong artinya service mengizinkan
+                    // apply (kasus checksheet tanpa jadwal aktif). Tampilkan tombol agar wizard
+                    // dapat menginisialisasi jadwal pertama via apply endpoint.
+                    if (previewToken) {
+                        applyButton?.classList.remove('hidden');
+                        applyButton?.removeAttribute('disabled');
+                    }
+                } else if (result.status === 'conflict') {
+                    renderServerStatus('Perubahan bentrok dengan data historis/protected. Periksa daftar konflik.', 'red');
+                    applyButton?.classList.remove('hidden');
+                    applyButton?.setAttribute('disabled', 'disabled');
+                } else if (result.status === 'normal') {
+                    renderServerStatus('Perubahan jadwal siap diterapkan.', 'green');
+                    applyButton?.classList.remove('hidden');
+                    applyButton?.removeAttribute('disabled');
+                } else {
+                    renderServerStatus('Status preview jadwal tidak dikenali.', 'info');
+                }
+            } catch {
+                // Network error atau kegagalan tak terduga — tampilkan pesan stabil
+                renderServerStatus('Pratinjau jadwal tidak dapat dimuat. Silakan coba kembali.', 'red');
+            }
+        };
+
+        applyButton?.addEventListener('click', async () => {
+            if (! editId || ! applyUrl || ! previewToken || scheduleApplied) {
+                return;
+            }
+            collectPayload();
+            applyButton.setAttribute('disabled', 'disabled');
+            applyStatus?.classList.add('hidden');
+            try {
+                const response = await fetch(applyUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ wizard_payload: payloadInput.value, token: previewToken, confirmed: 1 }),
+                });
+                // Parse defensif — blokir mutation jika response tidak valid
+                const result = await safeParseJson(response);
+                if (result === null) {
+                    renderServerStatus('Penerapan jadwal tidak dapat dimuat. Silakan coba kembali.', 'red');
+                    applyButton.removeAttribute('disabled');
+                    return;
+                }
+                if (response.status === 409) {
+                    // Tampilkan notice stale ke slot applyStatus — jangan tampilkan jargon backend.
+                    staleNoticeActive = true;
+                    renderStaleNotice();
+                    await runServerPreview();
+                    return;
+                }
+                if (response.status === 422) {
+                    renderServerStatus(result.message ?? 'Jadwal belum dapat diterapkan.', 'amber');
+                    applyButton.classList.add('hidden');
+                    applyButton.setAttribute('disabled', 'disabled');
+                    return;
+                }
+                if (! response.ok || result.status !== 'applied') {
+                    renderServerStatus(result.message ?? 'Penerapan jadwal gagal.', 'red');
+                    applyButton.removeAttribute('disabled');
+                    return;
+                }
+                scheduleApplied = true;
+                // Bersihkan stale notice sebelum menampilkan success copy.
+                staleNoticeActive = false;
+                applyButton.classList.add('hidden');
+                if (applyStatus) {
+                    applyStatus.textContent = 'Jadwal berhasil diterapkan. Menyimpan perubahan checksheet...';
+                    applyStatus.className = 'rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900';
+                }
+                form?.requestSubmit();
+            } catch {
+                // Network error atau kegagalan tak terduga — tampilkan pesan stabil, blokir mutation
+                renderServerStatus('Penerapan jadwal gagal. Silakan coba kembali.', 'red');
+                applyButton.removeAttribute('disabled');
+            }
+        });
         const collectPayload = () => {
             payloadInput.value = JSON.stringify({
                 selected_machine_ids: state.selectedMachineIds,
@@ -2445,13 +2652,8 @@ document.addEventListener('DOMContentLoaded', () => {
             renderPreview();
         });
 
-        startDateInput?.addEventListener('change', () => {
-            state.schedule.start_date = startDateInput.value;
-            renderPreview();
-        });
-
-        endDateInput?.addEventListener('change', () => {
-            state.schedule.generate_until = endDateInput.value;
+        operationalDateInput?.addEventListener('change', () => {
+            state.schedule.operational_from = operationalDateInput.value;
             renderPreview();
         });
 
@@ -2465,6 +2667,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentStep === 6) {
                 renderReview();
                 collectPayload();
+                // Preview server dijalankan saat review edit dibuka, tanpa mengganggu tombol Save legacy.
+                runServerPreview();
             }
             renderPanels();
         });

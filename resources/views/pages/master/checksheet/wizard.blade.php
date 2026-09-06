@@ -8,7 +8,7 @@
     ])->values()->all();
 @endphp
 
-<section class="space-y-6" data-checksheet-wizard data-seed-machines='@json($seedMachines)' data-seed-payload='@json($initialPayload ?? new stdClass())'>
+<section class="space-y-6" data-checksheet-wizard data-edit-id="{{ $checksheet?->id }}" data-preview-url="{{ route('master-checksheet.preview-schedule-update', $checksheet->id ?? 0) }}" data-apply-url="{{ route('master-checksheet.apply-schedule-update', $checksheet->id ?? 0) }}" data-seed-machines='@json($seedMachines)' data-seed-payload='@json($initialPayload ?? new stdClass())'>
     <a href="{{ route('master-checksheet.index') }}" class="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-prime-muted)] hover:text-[var(--color-prime-ink)]">Kembali ke List</a>
 
     <h2 class="text-[2.35rem] font-semibold tracking-[-0.05em] text-[var(--color-prime-ink)]">{{ $title }}</h2>
@@ -95,12 +95,8 @@
                         <input type="number" min="1" max="31" class="w-full rounded-xl border border-[var(--color-prime-border)] px-4 py-3" data-monthly-day>
                     </label>
                     <label class="block">
-                        <span class="mb-1 block text-sm font-semibold">Mulai Generate Dari *</span>
-                        <input type="date" class="w-full rounded-xl border border-[var(--color-prime-border)] px-4 py-3" data-schedule-start>
-                    </label>
-                    <label class="block">
-                        <span class="mb-1 block text-sm font-semibold">Generate Sampai *</span>
-                        <input type="date" class="w-full rounded-xl border border-[var(--color-prime-border)] px-4 py-3" data-schedule-end>
+                        <span class="mb-1 block text-sm font-semibold">Mulai Jadwal PRIME *</span>
+                        <input type="date" class="w-full rounded-xl border border-[var(--color-prime-border)] px-4 py-3" data-schedule-operational>
                     </label>
                 </div>
                 <div class="rounded-xl border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4">
@@ -115,6 +111,11 @@
             <div data-step-panel="6" class="hidden space-y-4">
                 <h3 class="text-2xl font-semibold">Review Checksheet</h3>
                 <div class="rounded-xl border border-[var(--color-prime-border)] bg-[var(--color-prime-soft)] p-4" data-review-box></div>
+                {{-- Panel ini menampilkan hasil preview server sebelum jadwal edit diterapkan. --}}
+                <div class="hidden rounded-xl border p-4" data-schedule-status></div>
+                <div class="hidden overflow-x-auto rounded-xl border border-[var(--color-prime-border)]" data-schedule-impact></div>
+                <button type="button" class="hidden rounded-xl bg-[var(--color-prime-primary)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" data-apply-schedule>Terapkan Jadwal &amp; Simpan</button>
+                <div class="hidden rounded-xl border p-4 text-sm" data-apply-status></div>
             </div>
         </div>
 

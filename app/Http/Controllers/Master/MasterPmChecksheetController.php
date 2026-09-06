@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Master;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Master\PreviewScheduleUpdateRequest;
 use App\Http\Requests\Master\StorePmChecksheetRequest;
 use App\Http\Requests\Master\UpdatePmChecksheetRequest;
 use App\Models\Location;
@@ -10,7 +11,10 @@ use App\Models\Machine;
 use App\Models\PmChecksheet;
 use App\Services\Auth\PrimeAuthService;
 use App\Services\Master\PmChecksheetService;
+use App\Services\Master\PmScheduleUpdateService;
+use App\Services\PM\StalePreviewException;
 use DomainException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -20,6 +24,7 @@ class MasterPmChecksheetController extends Controller
 {
     public function __construct(
         protected PmChecksheetService $checksheetService,
+        protected PmScheduleUpdateService $scheduleUpdateService,
         protected PrimeAuthService $primeAuth,
     ) {}
 
@@ -125,6 +130,65 @@ class MasterPmChecksheetController extends Controller
         return redirect()
             ->route('master-checksheet.show', $checksheet->id)
             ->with('flash_success', 'Sinkronisasi jadwal PM berhasil diterapkan.');
+    }
+
+    /**
+     * Preview dampak perubahan jadwal tanpa menulis ke database.
+     *
+     * Mengembalikan JSON berisi klasifikasi tanggal (created/removed/protected/conflict),
+     * token fingerprint, dan status. Token harus dikirim kembali saat apply.
+     */
+    public function previewScheduleUpdate(PreviewScheduleUpdateRequest $request, int $checksheetId): JsonResponse
+    {
+        $checksheet = $this->findChecksheet($checksheetId);
+
+        // Request khusus sudah mengubah wizard_payload menjadi array.
+        $schedule = $request->input('wizard_payload.schedule', []);
+
+        $result = $this->scheduleUpdateService->preview($checksheet, $schedule);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Terapkan perubahan jadwal dengan proteksi transaksi, lock, dan fingerprint.
+     *
+     * Memerlukan 'confirmed' dan 'token' dari preview sebelumnya.
+     * Token yang kedaluwarsa (state berubah antara preview dan apply)
+     * akan ditolak dan klien harus menjalankan preview ulang.
+     */
+    public function applyScheduleUpdate(PreviewScheduleUpdateRequest $request, int $checksheetId): JsonResponse
+    {
+        // Validasi konfirmasi dari klien.
+        if (! $request->input('confirmed')) {
+            return response()->json(['message' => 'Konfirmasi diperlukan untuk menerapkan perubahan.'], 422);
+        }
+
+        // Validasi token dari klien.
+        $token = $request->input('token');
+        if (empty($token)) {
+            return response()->json(['message' => 'Token preview diperlukan. Jalankan preview terlebih dahulu.'], 422);
+        }
+
+        $checksheet = $this->findChecksheet($checksheetId);
+
+        // Request khusus sudah mengubah wizard_payload menjadi array.
+        $schedule = $request->input('wizard_payload.schedule', []);
+        try {
+            $result = $this->scheduleUpdateService->apply($checksheet, $schedule, $token);
+
+            return response()->json($result, ($result['status'] ?? null) === 'unresolved' ? 422 : 200);
+        } catch (StalePreviewException) {
+            // Token kedaluwarsa: jalankan preview ulang untuk menghasilkan
+            // token baru dan klasifikasi terbaru, kirim ke klien.
+            $freshPreview = $this->scheduleUpdateService->preview($checksheet, $schedule);
+
+            return response()->json([
+                'status' => 'stale',
+                'message' => 'Preview sudah kedaluwarsa karena state database berubah. Silakan tinjau preview baru dan konfirmasi ulang.',
+                'preview' => $freshPreview,
+            ], 409);
+        }
     }
 
     public function edit(Request $request, int $checksheetId): View
