@@ -15,15 +15,21 @@ use App\Models\PmExecutionMedia;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Models\User;
+use App\Services\Auth\ActivityLogService;
+use App\Services\Notification\AdminNotificationService;
 use App\Services\PM\PmExecutionMediaService;
 use App\Services\PM\PmExecutionService;
 use App\Services\PM\PmScheduleDateReconciler;
+use App\Services\PM\PmWarningService;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -749,6 +755,438 @@ class PmExecutorTest extends TestCase
             ->twice();
     }
 
+    // ====================================================================
+    // ADR-004 Slice 1 — Canonical Serialization + Lifecycle Contract
+    // ====================================================================
+
+    /**
+     * S1-01: Start terjadwal pertama → tepat satu execution, occurrence in_progress.
+     */
+    public function test_s1_first_scheduled_start_creates_exactly_one_execution(): void
+    {
+        $service = app(PmExecutionService::class);
+        $execution = $service->startExecutionOnly(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $this->operator,
+        );
+
+        $this->assertSame('in_progress', $execution->status);
+        $this->assertSame(1, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+        $this->assertSame('in_progress', $this->scheduleDate->fresh()->status);
+    }
+
+    /**
+     * S1-02: Operator yang sama retry → reuse execution ID, count tetap 1.
+     */
+    public function test_s1_same_operator_retry_reuses_execution(): void
+    {
+        $service = app(PmExecutionService::class);
+        $first = $service->startExecutionOnly(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $this->operator,
+        );
+        $second = $service->startExecutionOnly(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $this->operator,
+        );
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertSame(1, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-03: Operator berbeda retry → reuse ID yang sama, operator asli tetap.
+     */
+    public function test_s1_different_operator_retry_reuses_same_execution_preserves_original_operator(): void
+    {
+        $service = app(PmExecutionService::class);
+        $first = $service->startExecutionOnly(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $this->operator,
+        );
+
+        $otherOperator = User::query()->create([
+            'name' => 'Operator Lain',
+            'username' => 'operator.lain',
+            'password' => Hash::make('password'),
+            'role' => 'operator',
+            'is_active' => true,
+        ]);
+
+        $second = $service->startExecutionOnly(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $otherOperator,
+        );
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertSame($this->operator->id, $second->fresh()->operator_id);
+        $this->assertSame(1, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-04: Start, submit, media-upload semua menggunakan canonical resolver yang sama.
+     * Dibuktikan melalui startOrSaveDraft yang memanggil startExecutionOnly,
+     * dan submit yang memanggil startOrSaveDraft — ketiganya menghasilkan execution sama.
+     */
+    public function test_s1_all_entry_points_use_same_canonical_resolver(): void
+    {
+        $service = app(PmExecutionService::class);
+
+        // Entry point 1: startExecutionOnly (start)
+        $exec1 = $service->startExecutionOnly(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $this->operator,
+        );
+
+        // Entry point 2: startOrSaveDraft (draft)
+        $exec2 = $service->startOrSaveDraft(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $this->operator,
+            actionValues: [$this->actionStandard->id => 'OK'],
+            numberValues: [$this->numberStandard->id => '60', $this->rangeStandard->id => '120'],
+            partNotes: [],
+        );
+
+        $this->assertSame($exec1->id, $exec2->id);
+        $this->assertSame(1, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-05: Existing in_progress execution tetap digunakan ulang.
+     */
+    public function test_s1_existing_in_progress_reused(): void
+    {
+        $existing = $this->createExecutionWithMedia('in_progress', ['started_at' => now()->subMinutes(10)]);
+
+        $service = app(PmExecutionService::class);
+        $resolved = $service->startExecutionOnly(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $this->operator,
+        );
+
+        $this->assertSame($existing->id, $resolved->id);
+        $this->assertSame(1, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-06: waiting_review menolak start (zero mutation).
+     */
+    public function test_s1_waiting_review_rejects_start_with_zero_mutation(): void
+    {
+        $existing = $this->createExecutionWithMedia('waiting_review', [
+            'started_at' => now()->subHour(),
+            'submitted_at' => now()->subMinutes(30),
+        ]);
+        // Occurrence stale/eligible: resolver must reject from execution lifecycle.
+        $this->scheduleDate->forceFill([
+            'status' => 'scheduled',
+            'status_changed_at' => null,
+        ])->save();
+
+        $service = app(PmExecutionService::class);
+
+        try {
+            $service->startExecutionOnly(
+                request: $this->s1Request(),
+                machine: $this->machine,
+                operator: $this->operator,
+            );
+            $this->fail('Start harus ditolak saat ada execution waiting_review.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString(
+                'sudah',
+                collect($e->errors())->flatten()->first(),
+            );
+        }
+
+        $this->assertSame(1, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+        $this->assertSame('waiting_review', $existing->fresh()->status);
+    }
+
+    /**
+     * S1-07: approved menolak start (zero mutation).
+     */
+    public function test_s1_approved_rejects_start_with_zero_mutation(): void
+    {
+        $existing = $this->createExecutionWithMedia('approved', [
+            'started_at' => now()->subHours(2),
+            'submitted_at' => now()->subHour(),
+            'approved_at' => now()->subMinutes(30),
+            'approved_by' => $this->admin->id,
+            'approved_by_name_snapshot' => $this->admin->name,
+        ]);
+        // Occurrence stale/eligible: resolver must reject from execution lifecycle.
+        $this->scheduleDate->forceFill([
+            'status' => 'scheduled',
+            'status_changed_at' => null,
+        ])->save();
+
+        $service = app(PmExecutionService::class);
+
+        try {
+            $service->startExecutionOnly(
+                request: $this->s1Request(),
+                machine: $this->machine,
+                operator: $this->operator,
+            );
+            $this->fail('Start harus ditolak saat ada execution approved.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString(
+                'sudah',
+                collect($e->errors())->flatten()->first(),
+            );
+        }
+
+        $this->assertSame(1, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+        $this->assertSame('approved', $existing->fresh()->status);
+    }
+
+    /**
+     * S1-08: Soft-deleted execution memblokir pembuatan baru (bukti historis).
+     */
+    public function test_s1_soft_deleted_execution_blocks_replacement(): void
+    {
+        $existing = PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now()->subHour(),
+        ]);
+        $existing->delete(); // soft-delete
+
+        $service = app(PmExecutionService::class);
+
+        try {
+            $service->startExecutionOnly(
+                request: $this->s1Request(),
+                machine: $this->machine,
+                operator: $this->operator,
+            );
+            $this->fail('Start harus ditolak saat ada soft-deleted execution.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString(
+                'histori',
+                mb_strtolower(collect($e->errors())->flatten()->first()),
+            );
+        }
+
+        // Tetap hanya satu execution (yang soft-deleted)
+        $this->assertSame(1, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+        $this->assertSame(0, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-09: Legacy duplicate (>1 rows) fail closed — tidak memilih newest/oldest.
+     */
+    public function test_s1_legacy_duplicate_executions_fail_closed(): void
+    {
+        // S2: named unique index membuat row duplikat tidak mungkin dibuat lewat jalur normal.
+        // Test legacy ini tetap memvalidasi kondisi pre-constraint dengan dua row nyata:
+        // turunkan sementara hanya named unique index, pulihkan lewat finally di akhir test.
+        Schema::table('pm_executions', function (Blueprint $table): void {
+            $table->dropUnique('pm_executions_pm_schedule_date_id_unique');
+        });
+
+        $first = null;
+        $second = null;
+
+        try {
+            // Buat dua execution secara manual untuk simulasi data legacy
+            $first = PmExecution::query()->create([
+                'pm_schedule_date_id' => $this->scheduleDate->id,
+                'machine_id' => $this->machine->id,
+                'operator_id' => $this->operator->id,
+                'operator_name_snapshot' => $this->operator->name,
+                'status' => 'in_progress',
+                'started_at' => now()->subHour(),
+            ]);
+            $second = PmExecution::query()->create([
+                'pm_schedule_date_id' => $this->scheduleDate->id,
+                'machine_id' => $this->machine->id,
+                'operator_id' => $this->operator->id,
+                'operator_name_snapshot' => $this->operator->name,
+                'status' => 'in_progress',
+                'started_at' => now()->subMinutes(30),
+            ]);
+            $this->scheduleDate->forceFill(['status' => 'in_progress', 'status_changed_at' => now()])->save();
+
+            $service = app(PmExecutionService::class);
+
+            try {
+                $service->startExecutionOnly(
+                    request: $this->s1Request(),
+                    machine: $this->machine,
+                    operator: $this->operator,
+                );
+                $this->fail('Legacy duplicate harus gagal closed.');
+            } catch (ValidationException $e) {
+                $this->assertStringContainsString(
+                    'duplikat',
+                    mb_strtolower(collect($e->errors())->flatten()->first()),
+                );
+            }
+        } finally {
+            // Hard delete fixture duplikat (row soft-deleted pun tetap menempati unique index),
+            // lalu pulihkan named unique index agar invariant Slice 2 tidak bocor ke test lain.
+            if ($first !== null || $second !== null) {
+                PmExecution::withTrashed()
+                    ->whereIn('id', array_filter([$first?->id, $second?->id]))
+                    ->forceDelete();
+            }
+
+            Schema::table('pm_executions', function (Blueprint $table): void {
+                $table->unique('pm_schedule_date_id', 'pm_executions_pm_schedule_date_id_unique');
+            });
+        }
+    }
+
+    /**
+     * S1-11: Machine mismatch tetap terdeteksi berdasarkan schedule-date identity.
+     * Resolver tidak boleh membuat replacement untuk row historis yang salah parent.
+     */
+    public function test_s1_machine_mismatch_execution_blocks_replacement(): void
+    {
+        $otherMachine = Machine::query()->create([
+            'location_id' => $this->machine->location_id,
+            'machine_code' => 'UC-002',
+            'machine_name' => 'MOTOR SERVO B',
+            'qr_token' => 'qr-uc-002',
+            'is_active' => true,
+        ]);
+
+        $existing = PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $otherMachine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now()->subHour(),
+        ]);
+
+        $service = app(PmExecutionService::class);
+
+        try {
+            $service->startExecutionOnly(
+                request: $this->s1Request(),
+                machine: $this->machine,
+                operator: $this->operator,
+            );
+            $this->fail('Start harus ditolak saat machine execution mismatch dengan occurrence.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString(
+                'tidak sesuai',
+                mb_strtolower(collect($e->errors())->flatten()->first()),
+            );
+        }
+
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $existing->id,
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $otherMachine->id,
+            'status' => 'in_progress',
+        ]);
+        $this->assertSame(
+            1,
+            PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count(),
+        );
+    }
+
+    /**
+     * Membuat Request dengan session store agar ActivityLogService dapat dipanggil
+     * langsung dari service tanpa middleware web penuh (ADR-004 Slice 1).
+     */
+    private function s1Request(): Request
+    {
+        $request = Request::create('/', 'GET');
+        $request->setLaravelSession(app('session.store'));
+
+        return $request;
+    }
+
+    /**
+     * S1-10: canonicalExecution() relation pada PmScheduleDate mengembalikan single row termasuk soft-deleted.
+     */
+    public function test_s1_canonical_execution_relation_includes_soft_deleted(): void
+    {
+        $execution = PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now()->subHour(),
+        ]);
+
+        // Sebelum soft-delete
+        $canonical = $this->scheduleDate->canonicalExecution;
+        $this->assertNotNull($canonical);
+        $this->assertSame($execution->id, $canonical->id);
+
+        // Setelah soft-delete
+        $execution->delete();
+        $fresh = $this->scheduleDate->fresh();
+        $this->assertNotNull($fresh->canonicalExecution);
+        $this->assertSame($execution->id, $fresh->canonicalExecution->id);
+    }
+
+    /**
+     * S1-11: Authorization tetap tidak berubah — admin dan guest tetap ditolak.
+     */
+    public function test_s1_authorization_unchanged(): void
+    {
+        // Admin cannot start
+        $this->actingAs($this->admin)
+            ->post("/pm/executor/{$this->machine->machine_code}/start", [
+                'execution_action' => [$this->actionStandard->id => 'OK'],
+                'execution_number' => [
+                    $this->numberStandard->id => 60,
+                    $this->rangeStandard->id => 120,
+                ],
+            ])
+            ->assertRedirect('/403');
+
+        $this->assertSame(0, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-12: Occurrence transition + next-date behavior tidak berubah setelah canonical resolver.
+     */
+    public function test_s1_occurrence_transition_and_next_date_unchanged(): void
+    {
+        // Submit membuat execution, transisi ke waiting_review, buat jadwal berikutnya
+        $this->actingAs($this->operator)->post("/pm/executor/{$this->machine->machine_code}/submit", [
+            'execution_action' => [$this->actionStandard->id => 'OK'],
+            'execution_number' => [
+                $this->numberStandard->id => 60,
+                $this->rangeStandard->id => 120,
+            ],
+        ])->assertRedirect("/machines/{$this->machine->machine_code}");
+
+        $execution = PmExecution::query()->firstOrFail();
+        $this->assertSame('waiting_review', $execution->status);
+        $this->assertSame('waiting_review', $this->scheduleDate->fresh()->status);
+
+        // Next schedule date harus ada
+        $this->assertTrue(
+            PmScheduleDate::query()
+                ->where('pm_schedule_id', $this->scheduleDate->pm_schedule_id)
+                ->where('machine_id', $this->machine->id)
+                ->whereDate('scheduled_date', now()->addDay()->toDateString())
+                ->where('status', 'scheduled')
+                ->exists(),
+        );
+    }
+
     /**
      * Recreated TASK-003 Slice-5 regression: a stale resolved candidate must
      * be rejected before draft items or media are mutated.
@@ -830,5 +1268,283 @@ class PmExecutorTest extends TestCase
         ]);
 
         return $execution;
+    }
+
+    /**
+     * Membuat exception duplicate-key realistis tanpa menjalankan migration Slice 2.
+     */
+    private function makeUniqueViolation(string $indexName, string $table): UniqueConstraintViolationException
+    {
+        $duplicateMessage = "Duplicate entry '1' for key '{$indexName}'";
+        $previous = new \PDOException("SQLSTATE[23000]: Integrity constraint violation: 1062 {$duplicateMessage}", 23000);
+        $previous->errorInfo = ['23000', 1062, $duplicateMessage];
+
+        return new UniqueConstraintViolationException(
+            'mysql',
+            "insert into `{$table}` (`pm_schedule_date_id`, `machine_id`) values (?, ?)",
+            [1, 1],
+            $previous,
+        );
+    }
+
+    /**
+     * Seam deterministik untuk mensimulasikan competitor yang belum terlihat
+     * pada pembacaan pertama, lalu winner sudah tersedia saat fallback.
+     */
+    private function collisionService(UniqueConstraintViolationException $violation, bool $hideCanonicalAlways = false): PmExecutionService
+    {
+        return new class(app(PmWarningService::class), app(PmExecutionMediaService::class), app(ActivityLogService::class), app(AdminNotificationService::class), $violation, $hideCanonicalAlways) extends PmExecutionService
+        {
+            public int $canonicalReads = 0;
+
+            public int $insertAttempts = 0;
+
+            public function __construct(
+                PmWarningService $warningService,
+                PmExecutionMediaService $mediaService,
+                ActivityLogService $activityLogService,
+                AdminNotificationService $notificationService,
+                private UniqueConstraintViolationException $violation,
+                private bool $hideCanonicalAlways,
+            ) {
+                parent::__construct($warningService, $mediaService, $activityLogService, $notificationService);
+            }
+
+            protected function findCanonicalExecution(Machine $machine, PmScheduleDate $scheduleDate, bool $lock = false): ?PmExecution
+            {
+                $this->canonicalReads++;
+
+                if ($this->hideCanonicalAlways || $this->canonicalReads === 1) {
+                    return null;
+                }
+
+                return parent::findCanonicalExecution($machine, $scheduleDate, $lock);
+            }
+
+            protected function createExecutionForStart(PmScheduleDate $scheduleDate, Machine $machine, User $operator): PmExecution
+            {
+                $this->insertAttempts++;
+
+                throw $this->violation;
+            }
+        };
+    }
+
+    /**
+     * S1-13: named canonical collision rollback-safe dan kembali ke winner canonical.
+     */
+    public function test_s1_canonical_unique_collision_recovers_to_existing_execution(): void
+    {
+        $canonical = PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(2),
+        ]);
+        $service = $this->collisionService($this->makeUniqueViolation('pm_executions_pm_schedule_date_id_unique', 'pm_executions'));
+
+        $execution = $service->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+
+        $this->assertSame(1, $service->insertAttempts);
+        $this->assertSame($canonical->id, $execution->id);
+        $this->assertSame(1, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-14: duplicate-key lain langsung melempar object exception asli.
+     */
+    public function test_s1_unrelated_unique_violation_is_rethrown_without_collision_recovery(): void
+    {
+        PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now()->subMinutes(2),
+        ]);
+        $violation = $this->makeUniqueViolation('users_username_unique', 'users');
+        $service = $this->collisionService($violation);
+
+        try {
+            $service->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+            $this->fail('Unique violation unrelated harus dilempar ulang.');
+        } catch (UniqueConstraintViolationException $caught) {
+            $this->assertSame($violation, $caught);
+        }
+
+        $this->assertSame(1, $service->canonicalReads);
+        $this->assertSame(1, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-15: canonical collision tanpa winner authoritative tidak disamarkan.
+     */
+    public function test_s1_unresolvable_canonical_collision_rethrows_original_exception(): void
+    {
+        $violation = $this->makeUniqueViolation('pm_executions_pm_schedule_date_id_unique', 'pm_executions');
+        $service = $this->collisionService($violation, true);
+
+        try {
+            $service->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+            $this->fail('Collision tanpa canonical harus melempar exception asli.');
+        } catch (UniqueConstraintViolationException $caught) {
+            $this->assertSame($violation, $caught);
+        }
+
+        $this->assertSame(0, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-16: fallback tetap menegakkan lifecycle waiting_review.
+     */
+    public function test_s1_canonical_collision_on_processed_occurrence_is_rejected_by_lifecycle(): void
+    {
+        PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'waiting_review',
+            'started_at' => now()->subHour(),
+            'submitted_at' => now()->subMinutes(10),
+        ]);
+        $service = $this->collisionService($this->makeUniqueViolation('pm_executions_pm_schedule_date_id_unique', 'pm_executions'));
+
+        try {
+            $service->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+            $this->fail('waiting_review harus tetap ditolak.');
+        } catch (ValidationException $e) {
+            $this->assertSame('PM untuk occurrence ini sudah diproses dan tidak dapat dimulai ulang.', collect($e->errors())->flatten()->first());
+        }
+
+        $this->assertSame(1, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S1-17: HTTP upload memakai execution canonical dan part occurrence yang benar.
+     */
+    public function test_s1_media_upload_route_uses_same_canonical_execution_and_owned_part(): void
+    {
+        $started = app(PmExecutionService::class)->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+        $this->actingAs($this->operator)->post("/pm/executor/{$this->machine->machine_code}/media/upload", [
+            'part_id' => $this->part->id,
+            'part_note' => 'Foto via route produksi',
+            'media_file' => UploadedFile::fake()->image('canonical.jpg', 640, 480),
+        ])->assertRedirect("/pm/executor/{$this->machine->machine_code}");
+
+        $media = PmExecutionMedia::query()->firstOrFail();
+        $this->assertSame($started->id, (int) $media->pm_execution_id);
+        $this->assertSame($this->part->id, (int) $media->pm_checksheet_part_id);
+        $execution = PmExecution::query()->findOrFail($media->pm_execution_id);
+        $execution->loadMissing('scheduleDate.schedule');
+        $this->assertSame((int) $execution->scheduleDate->schedule->pm_checksheet_machine_id, (int) $this->part->pm_checksheet_machine_id);
+        Storage::disk('public')->assertExists($media->file_path);
+    }
+
+    /**
+     * S2-01: migration membuat named unique index exact dan memertahankan
+     * ordinary index serta NOT NULL pada pm_schedule_date_id.
+     */
+    public function test_s2_migration_creates_named_unique_index_and_preserves_existing_constraints(): void
+    {
+        $indexes = collect(Schema::getIndexes('pm_executions'))->keyBy('name');
+
+        $this->assertTrue($indexes->has('pm_executions_pm_schedule_date_id_unique'));
+        $this->assertTrue((bool) $indexes->get('pm_executions_pm_schedule_date_id_unique')['unique']);
+        $this->assertTrue($indexes->has('pm_executions_pm_schedule_date_id_index'));
+        $this->assertFalse((bool) $indexes->get('pm_executions_pm_schedule_date_id_index')['unique']);
+
+        // Kolom canonical tetap NOT NULL; migration tidak mengubah perilaku nullability.
+        $column = collect(Schema::getColumns('pm_executions'))->firstWhere('name', 'pm_schedule_date_id');
+        $this->assertNotNull($column);
+        $this->assertFalse((bool) $column['nullable']);
+    }
+
+    /**
+     * S2-02: direct insert database kedua untuk occurrence yang sama ditolak
+     * oleh unique index (bypass resolver aplikasi); count akhir tetap satu.
+     */
+    public function test_s2_second_direct_insert_for_same_occurrence_is_rejected_by_unique_index(): void
+    {
+        PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now()->subHour(),
+        ]);
+
+        try {
+            DB::table('pm_executions')->insert([
+                'pm_schedule_date_id' => $this->scheduleDate->id,
+                'machine_id' => $this->machine->id,
+                'operator_id' => $this->operator->id,
+                'operator_name_snapshot' => $this->operator->name,
+                'status' => 'in_progress',
+                'started_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $this->fail('Insert kedua harus ditolak oleh unique index.');
+        } catch (UniqueConstraintViolationException $e) {
+            $this->assertCanonicalUniqueViolation($e);
+        }
+
+        $this->assertSame(1, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S2-03: execution soft-deleted tetap menempati unique index, sehingga
+     * direct insert pengganti untuk occurrence yang sama ditolak database.
+     */
+    public function test_s2_soft_deleted_execution_still_occupies_unique_index_and_blocks_direct_insert(): void
+    {
+        $execution = PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now()->subHour(),
+        ]);
+        $execution->delete(); // soft delete: row tetap ada dan menempati unique index
+
+        try {
+            DB::table('pm_executions')->insert([
+                'pm_schedule_date_id' => $this->scheduleDate->id,
+                'machine_id' => $this->machine->id,
+                'operator_id' => $this->operator->id,
+                'operator_name_snapshot' => $this->operator->name,
+                'status' => 'in_progress',
+                'started_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $this->fail('Insert pengganti harus ditolak karena row soft-deleted tetap menempati unique index.');
+        } catch (UniqueConstraintViolationException $e) {
+            $this->assertCanonicalUniqueViolation($e);
+        }
+
+        $this->assertSame(1, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+        $this->assertSame(0, PmExecution::query()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * S2: validasi pesan unique violation sesuai driver database test.
+     * MySQL menyebut nama index; SQLite memakai pesan UNIQUE constraint failed.
+     */
+    private function assertCanonicalUniqueViolation(UniqueConstraintViolationException $e): void
+    {
+        if (DB::connection()->getDriverName() === 'mysql') {
+            $this->assertStringContainsString('pm_executions_pm_schedule_date_id_unique', $e->getMessage());
+
+            return;
+        }
+
+        $this->assertStringContainsString('UNIQUE constraint failed', $e->getMessage());
     }
 }

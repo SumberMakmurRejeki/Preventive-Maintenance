@@ -115,7 +115,6 @@ class PmExecutorController extends Controller
             request: $request,
             machine: $machine,
             operator: $operator,
-            resolvedContext: $context,
         );
 
         $partId = (int) $request->validated('part_id');

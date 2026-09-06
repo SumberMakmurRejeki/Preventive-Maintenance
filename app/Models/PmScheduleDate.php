@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PmScheduleDate extends Model
@@ -45,6 +46,18 @@ class PmScheduleDate extends Model
     public function executions(): HasMany
     {
         return $this->hasMany(PmExecution::class);
+    }
+
+    /**
+     * ADR-004: hubungan singular identitas canonical untuk satu occurrence.
+     *
+     * withTrashed dipakai agar soft-deleted execution tetap menjadi identitas historis
+     * yang memblokir replacement, sesuai invariant "maksimal satu canonical execution
+     * termasuk soft-deleted row" dari ADR-004.
+     */
+    public function canonicalExecution(): HasOne
+    {
+        return $this->hasOne(PmExecution::class)->withTrashed();
     }
 
     public function scopeByStatus(Builder $query, string $status): void

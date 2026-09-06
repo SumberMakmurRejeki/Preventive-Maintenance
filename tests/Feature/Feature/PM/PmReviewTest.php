@@ -17,9 +17,12 @@ use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Models\PrimeNotification;
 use App\Models\User;
+use App\Services\PM\PmReviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class PmReviewTest extends TestCase
@@ -540,4 +543,134 @@ class PmReviewTest extends TestCase
     }
 
     // ====================================================================
+    // ADR-004 Slice 1 — Canonical Serialization + Lifecycle Contract
+    // ====================================================================
+
+    /**
+     * S1-R1: Approval mentransisikan execution+occurrence ke approved dengan benar.
+     * Regression test — harus tetap lulus setelah lock reorder.
+     */
+    public function test_s1_approval_transitions_execution_and_occurrence_to_approved(): void
+    {
+        $this->actingAs($this->admin)
+            ->patch("/pm/review/{$this->execution->id}/approve", [
+                'review_note' => 'Disetujui setelah canonical resolver.',
+            ])
+            ->assertRedirect("/pm/review/{$this->execution->id}");
+
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'status' => 'approved',
+            'approved_by' => $this->admin->id,
+            'review_note' => 'Disetujui setelah canonical resolver.',
+        ]);
+        $this->assertDatabaseHas('pm_schedule_dates', [
+            'id' => $this->scheduleDate->id,
+            'status' => 'approved',
+        ]);
+    }
+
+    /**
+     * S1-R2: Approval membaca ulang lifecycle di bawah Machine → Date → Execution locks.
+     * Dibuktikan: jika status execution berubah jadi approved di DB sebelum approve dipanggil,
+     * approve menolak dengan pesan yang tepat.
+     */
+    public function test_s1_approval_rereads_lifecycle_under_locks(): void
+    {
+        // Ubah status di DB menjadi approved sebelum approve dipanggil
+        PmExecution::query()->whereKey($this->execution->id)->update([
+            'status' => 'approved',
+            'approved_at' => now(),
+            'approved_by' => $this->admin->id,
+            'approved_by_name_snapshot' => $this->admin->name,
+        ]);
+
+        try {
+            app(PmReviewService::class)->approve(
+                request: $this->s1Request(),
+                execution: $this->execution, // stale model, status masih waiting_review di memory
+                admin: $this->admin,
+                reviewNote: 'Double approve attempt',
+            );
+            $this->fail('Approve harus ditolak saat execution sudah approved.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString(
+                'approved',
+                mb_strtolower(collect($e->errors())->flatten()->first()),
+            );
+        }
+    }
+
+    /**
+     * S1-R3: Test-test ADR-003 protected delete tetap lulus setelah perubahan Slice 1.
+     * Ini adalah regression meta-test — memanggil skenario yang sama.
+     */
+    public function test_s1_adr003_protected_delete_tests_still_pass(): void
+    {
+        // Delete pada execution waiting_review (setUp default) tetap ditolak
+        $response = $this->actingAs($this->admin)->delete("/pm/review/{$this->execution->id}");
+        $response->assertRedirect("/pm/review/{$this->execution->id}");
+        $response->assertSessionHas('flash_error');
+
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'status' => 'waiting_review',
+        ]);
+    }
+
+    /**
+     * S1-R4: Execution dengan machine mismatch tidak boleh di-approve.
+     * Parent chain harus valid sebelum status execution dimutasi.
+     */
+    public function test_s1_approval_rejects_execution_machine_mismatch_without_mutation(): void
+    {
+        $otherMachine = Machine::query()->create([
+            'location_id' => $this->machine->location_id,
+            'machine_code' => 'MC-02',
+            'machine_name' => 'Filling Machine B',
+            'qr_token' => 'qr-mc-02',
+            'is_active' => true,
+        ]);
+
+        // Simulasikan data historis rusak: occurrence tetap milik machine asli,
+        // tetapi execution menunjuk machine lain.
+        PmExecution::query()->whereKey($this->execution->id)->update([
+            'machine_id' => $otherMachine->id,
+            'status' => 'waiting_review',
+        ]);
+
+        try {
+            app(PmReviewService::class)->approve(
+                request: $this->s1Request(),
+                execution: $this->execution,
+                admin: $this->admin,
+                reviewNote: 'Mismatch harus ditolak',
+            );
+            $this->fail('Approve harus ditolak saat machine execution mismatch dengan occurrence.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString(
+                'tidak sesuai',
+                mb_strtolower(collect($e->errors())->flatten()->first()),
+            );
+        }
+
+        $this->assertDatabaseHas('pm_executions', [
+            'id' => $this->execution->id,
+            'machine_id' => $otherMachine->id,
+            'status' => 'waiting_review',
+        ]);
+        $this->assertDatabaseHas('pm_schedule_dates', [
+            'id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'status' => 'waiting_review',
+        ]);
+    }
+
+    private function s1Request(): Request
+    {
+        $request = Request::create('/', 'GET');
+        $request->setLaravelSession(app('session.store'));
+
+        return $request;
+    }
 }

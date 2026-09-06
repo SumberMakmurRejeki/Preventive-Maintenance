@@ -7,6 +7,7 @@ use App\Models\Machine;
 use App\Models\PmExecution;
 use App\Models\PmExecutionItem;
 use App\Models\PmExecutionMedia;
+use App\Models\PmScheduleDate;
 use App\Models\PrimeNotification;
 use App\Models\User;
 use App\Services\Auth\ActivityLogService;
@@ -235,6 +236,8 @@ class PmReviewService
 
     public function approve(Request $request, PmExecution $execution, ?User $admin, ?string $reviewNote): void
     {
+        // Precheck cepat untuk UX; keputusan final tetap memakai re-read terkunci
+        // dalam transaction agar stale model tidak dapat melewati lifecycle check.
         if ($execution->status === 'approved') {
             throw ValidationException::withMessages([
                 'execution' => 'Hasil PM ini sudah berstatus approved.',
@@ -242,6 +245,66 @@ class PmReviewService
         }
 
         DB::transaction(function () use ($request, $execution, $admin, $reviewNote): void {
+            // ADR-004: partial order approval harus mengikuti Machine → PmScheduleDate → PmExecution.
+            $machine = Machine::query()
+                ->whereKey($execution->machine_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $machine) {
+                throw ValidationException::withMessages([
+                    'execution' => 'Mesin parent execution tidak ditemukan; approval dihentikan.',
+                ]);
+            }
+
+            $scheduleDate = PmScheduleDate::query()
+                ->whereKey($execution->pm_schedule_date_id)
+                ->where('machine_id', $machine->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $scheduleDate) {
+                throw ValidationException::withMessages([
+                    'execution' => 'Occurrence parent execution tidak ditemukan atau tidak sesuai mesin; approval dihentikan.',
+                ]);
+            }
+
+            // Parent harus valid sebelum execution dikunci; tidak ada fallback
+            // execution-only yang dapat memutasi histori tanpa occurrence.
+            $lockedExecution = PmExecution::query()
+                ->whereKey($execution->id)
+                ->where('pm_schedule_date_id', $scheduleDate->id)
+                ->where('machine_id', $machine->id)
+                ->lockForUpdate()
+                ->first();
+            if (! $lockedExecution) {
+                $mismatchedExecution = PmExecution::query()
+                    ->whereKey($execution->id)
+                    ->where('pm_schedule_date_id', $scheduleDate->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($mismatchedExecution) {
+                    throw ValidationException::withMessages([
+                        'execution' => 'Execution PM memiliki relasi mesin yang tidak sesuai dengan occurrence; approval dihentikan.',
+                    ]);
+                }
+
+                throw ValidationException::withMessages([
+                    'execution' => 'Transaksi PM tidak ditemukan.',
+                ]);
+            }
+
+            // Re-read lifecycle dari database sebelum mutation; status apa pun selain
+            // waiting_review ditolak untuk mencegah double approval dan bypass lifecycle.
+            if ($lockedExecution->status !== 'waiting_review') {
+                throw ValidationException::withMessages([
+                    'execution' => sprintf('Hasil PM ini sudah berstatus %s.', $lockedExecution->status),
+                ]);
+            }
+
+            $execution = $lockedExecution;
+
             $execution->forceFill([
                 'status' => 'approved',
                 'approved_at' => now(),
@@ -250,7 +313,9 @@ class PmReviewService
                 'review_note' => $reviewNote !== null ? trim($reviewNote) : $execution->review_note,
             ])->save();
 
-            $execution->scheduleDate?->forceFill([
+            // Occurrence hanya dimutasi jika relasi parent masih valid; row locked sebelumnya
+            // mencegah schedule date berubah di tengah approval transaction.
+            $scheduleDate?->forceFill([
                 'status' => 'approved',
                 'status_changed_at' => now(),
             ])->save();

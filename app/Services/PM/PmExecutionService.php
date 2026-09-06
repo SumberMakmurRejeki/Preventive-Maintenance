@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Auth\ActivityLogService;
 use App\Services\Notification\AdminNotificationService;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -44,7 +45,14 @@ class PmExecutionService
     public function getExecutorContext(Machine $machine): array
     {
         $scheduleDate = $this->findScheduleDateForExecutor($machine);
-        $execution = $this->findInProgressExecution($machine, $scheduleDate);
+        $execution = $this->findCanonicalExecution($machine, $scheduleDate, false);
+        // Execution soft-deleted tetap identity histori dan bukan pekerjaan live;
+        // jangan expose kembali sebagai checklist/editable executor.
+        if ($execution?->trashed()) {
+            throw ValidationException::withMessages([
+                'machine' => 'Occurrence ini memiliki execution histori yang sudah dihapus; replacement tidak diizinkan.',
+            ]);
+        }
         $checksheetMachine = $scheduleDate->schedule?->checksheetMachine;
 
         if (! $checksheetMachine) {
@@ -115,16 +123,8 @@ class PmExecutionService
         return DB::transaction(function () use ($request, $machine, $operator, $actionValues, $numberValues, $partNotes, $mediaFiles): PmExecution {
             // Resolver identity selalu membaca ulang parent dan occurrence dari database;
             // context dari halaman/controller hanya snapshot dan tidak menjadi sumber keputusan.
+            $execution = $this->startExecutionOnly($request, $machine, $operator);
             $context = $this->getExecutorContext($machine);
-            $scheduleDate = $context['schedule_date'];
-
-            if (! in_array($scheduleDate->status, ['scheduled', 'overdue', 'in_progress'], true)) {
-                throw ValidationException::withMessages([
-                    'machine' => 'Jadwal PM tidak dalam status yang dapat dikerjakan.',
-                ]);
-            }
-
-            $execution = $this->startExecutionOnly($request, $machine, $operator, $context);
 
             // Kunci execution tetap dipertahankan sampai transaction outer selesai agar
             // mutation item/media tidak berjalan terhadap lifecycle yang sudah berubah.
@@ -351,43 +351,110 @@ class PmExecutionService
     /**
      * @throws ValidationException
      */
-    public function findScheduleDateForExecutor(Machine $machine): PmScheduleDate
+    public function findScheduleDateForExecutor(Machine $machine, bool $lock = false, bool $includeExistingExecution = false): PmScheduleDate
     {
-        $inProgress = PmScheduleDate::query()
-            ->where('machine_id', $machine->id)
-            ->where('status', 'in_progress')
-            ->with(['schedule.checksheetMachine.checksheet'])
-            ->orderBy('scheduled_date')
-            ->first();
+        // Lock hanya dipakai oleh writer; read-only executor page tetap memakai query biasa.
+        $findDate = function (array $statuses) use ($machine, $lock): ?PmScheduleDate {
+            $query = PmScheduleDate::query()
+                ->where('machine_id', $machine->id)
+                ->whereIn('status', $statuses)
+                ->with(['schedule.checksheetMachine.checksheet'])
+                ->orderBy('scheduled_date');
 
+            if ($lock) {
+                $query->lockForUpdate();
+            }
+
+            return $query->first();
+        };
+
+        $inProgress = $findDate(['in_progress']);
         if ($inProgress) {
             return $inProgress;
         }
 
-        $active = PmScheduleDate::query()
-            ->where('machine_id', $machine->id)
-            ->whereIn('status', ['scheduled', 'overdue'])
-            ->with(['schedule.checksheetMachine.checksheet'])
-            ->orderBy('scheduled_date')
-            ->first();
+        $active = $findDate(['scheduled', 'overdue']);
+        if ($active) {
+            return $active;
+        }
 
-        if (! $active) {
+        if ($includeExistingExecution) {
+            // Writer wajib menemukan occurrence yang punya histori meski status occurrence
+            // stale; lifecycle execution kemudian menjadi sumber keputusan penolakan.
+            $query = PmScheduleDate::query()
+                ->where('machine_id', $machine->id)
+                ->whereHas('canonicalExecution')
+                ->with(['schedule.checksheetMachine.checksheet'])
+                ->orderBy('scheduled_date');
+
+            if ($lock) {
+                $query->lockForUpdate();
+            }
+
+            $existingExecutionDate = $query->first();
+            if ($existingExecutionDate) {
+                return $existingExecutionDate;
+            }
+        }
+
+        throw ValidationException::withMessages([
+            'machine' => 'Tidak ada jadwal PM aktif untuk mesin ini.',
+        ]);
+    }
+
+    protected function findCanonicalExecution(Machine $machine, PmScheduleDate $scheduleDate, bool $lock = false): ?PmExecution
+    {
+        // Identity canonical hanya berdasarkan occurrence; machine dipakai untuk
+        // memvalidasi integritas parent dan bukan sebagai uniqueness predicate.
+        $query = PmExecution::withTrashed()
+            ->where('pm_schedule_date_id', $scheduleDate->id)
+            ->orderBy('id');
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        $executions = $query->get();
+
+        if ($executions->count() > 1) {
             throw ValidationException::withMessages([
-                'machine' => 'Tidak ada jadwal PM aktif untuk mesin ini.',
+                'machine' => 'Ditemukan execution PM duplikat untuk occurrence ini; proses dihentikan untuk menjaga histori.',
             ]);
         }
 
-        return $active;
+        $execution = $executions->first();
+        if ($execution && (int) $execution->machine_id !== (int) $machine->id) {
+            throw ValidationException::withMessages([
+                'machine' => 'Execution PM memiliki relasi mesin yang tidak sesuai dengan occurrence; proses dihentikan untuk menjaga histori.',
+            ]);
+        }
+
+        return $execution;
     }
 
-    protected function findInProgressExecution(Machine $machine, PmScheduleDate $scheduleDate): ?PmExecution
+    protected function assertStartableExecution(?PmExecution $execution): void
     {
-        return PmExecution::query()
-            ->where('machine_id', $machine->id)
-            ->where('pm_schedule_date_id', $scheduleDate->id)
-            ->where('status', 'in_progress')
-            ->latest('id')
-            ->first();
+        if (! $execution) {
+            return;
+        }
+
+        if ($execution->trashed()) {
+            throw ValidationException::withMessages([
+                'machine' => 'Occurrence ini memiliki execution histori yang sudah dihapus; replacement tidak diizinkan.',
+            ]);
+        }
+
+        if (in_array($execution->status, ['waiting_review', 'approved'], true)) {
+            throw ValidationException::withMessages([
+                'machine' => 'PM untuk occurrence ini sudah diproses dan tidak dapat dimulai ulang.',
+            ]);
+        }
+
+        if ($execution->status !== 'in_progress') {
+            throw ValidationException::withMessages([
+                'machine' => 'Status execution PM tidak dikenali; proses dihentikan.',
+            ]);
+        }
     }
 
     protected function ensureNextScheduleDateExists(PmScheduleDate $scheduleDate): void
@@ -471,57 +538,137 @@ class PmExecutionService
     }
 
     /**
-     * @param  array{
-     *   schedule_date: PmScheduleDate,
-     *   execution: ?PmExecution,
-     *   checksheet_code: string,
-     *   checksheet_name: string,
-     *   parts: Collection<int, PmChecksheetPart>,
-     *   existing_items: array<int, PmExecutionItem>,
-     *   media_by_part: array<int, Collection<int, PmExecutionMedia>>
-     * }|null  $resolvedContext
+     * Create or reuse exactly one canonical execution for machine/date/operator.
+     * Lock order: Machine → PmScheduleDate → PmExecution.
+     * Legacy duplicate rows block replacement fail-closed.
+     *
+     * @throws ValidationException
      */
     public function startExecutionOnly(
         Request $request,
         Machine $machine,
         User $operator,
-        ?array $resolvedContext = null,
     ): PmExecution {
-        return DB::transaction(function () use ($request, $machine, $operator, $resolvedContext): PmExecution {
-            $context = $resolvedContext ?? $this->getExecutorContext($machine);
-            $scheduleDate = $context['schedule_date'];
-            $execution = $context['execution'];
+        $expectedCollision = false;
+        $collisionScheduleDateId = null;
 
-            if ($execution) {
-                return $execution;
-            }
+        try {
+            return DB::transaction(function () use ($request, $machine, $operator, &$expectedCollision, &$collisionScheduleDateId): PmExecution {
+                // Parent machine dikunci lebih dahulu agar seluruh writer mengikuti urutan lock yang sama.
+                $lockedMachine = Machine::query()
+                    ->whereKey($machine->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            $execution = PmExecution::query()->create([
-                'pm_schedule_date_id' => $scheduleDate->id,
-                'machine_id' => $machine->id,
-                'operator_id' => $operator->id,
-                'operator_name_snapshot' => $operator->name,
-                'status' => 'in_progress',
-                'started_at' => now(),
-            ]);
+                $scheduleDate = $this->findScheduleDateForExecutor($lockedMachine, true, true);
+                $collisionScheduleDateId = $scheduleDate->id;
 
-            if ($scheduleDate->status !== 'in_progress') {
+                // Occurrence dan execution dibaca ulang setelah parent lock, bukan dari context request.
+                $execution = $this->findCanonicalExecution($lockedMachine, $scheduleDate, true);
+                if ($execution) {
+                    $this->assertStartableExecution($execution);
+
+                    return $execution;
+                }
+
+                try {
+                    $execution = $this->createExecutionForStart($scheduleDate, $lockedMachine, $operator);
+                } catch (UniqueConstraintViolationException $exception) {
+                    // Hanya unique index canonical yang boleh masuk jalur pemulihan collision.
+                    $expectedCollision = $this->isCanonicalScheduleDateCollision($exception);
+                    throw $exception;
+                }
+
                 $scheduleDate->forceFill([
                     'status' => 'in_progress',
                     'status_changed_at' => now(),
                 ])->save();
+
+                $this->activityLogService->log(
+                    request: $request,
+                    moduleName: 'pm_executor',
+                    action: 'start_pm',
+                    description: sprintf('Mulai PM untuk mesin %s', $machine->machine_code),
+                    tableName: 'pm_executions',
+                    recordId: $execution->id,
+                );
+
+                return $execution;
+            });
+        } catch (UniqueConstraintViolationException $exception) {
+            if (! $expectedCollision || ! $collisionScheduleDateId) {
+                throw $exception;
             }
 
-            $this->activityLogService->log(
-                request: $request,
-                moduleName: 'pm_executor',
-                action: 'start_pm',
-                description: sprintf('Mulai PM untuk mesin %s', $machine->machine_code),
-                tableName: 'pm_executions',
-                recordId: $execution->id,
-            );
+            return DB::transaction(function () use ($machine, $collisionScheduleDateId, $exception): PmExecution {
+                // Setelah rollback, parent chain dikunci ulang untuk membaca row canonical authoritative.
+                $lockedMachine = Machine::query()
+                    ->whereKey($machine->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $scheduleDate = PmScheduleDate::query()
+                    ->whereKey($collisionScheduleDateId)
+                    ->where('machine_id', $lockedMachine->id)
+                    ->with(['schedule.checksheetMachine.checksheet'])
+                    ->lockForUpdate()
+                    ->first();
 
-            return $execution;
-        });
+                if (! $scheduleDate) {
+                    throw $exception;
+                }
+
+                $execution = $this->findCanonicalExecution($lockedMachine, $scheduleDate, true);
+                if (! $execution) {
+                    throw $exception;
+                }
+
+                $this->assertStartableExecution($execution);
+
+                if ($scheduleDate->status !== 'in_progress') {
+                    $scheduleDate->forceFill([
+                        'status' => 'in_progress',
+                        'status_changed_at' => now(),
+                    ])->save();
+                }
+
+                return $execution;
+            });
+        }
+    }
+
+    /**
+     * Memisahkan boundary insert agar klasifikasi collision dapat diuji tanpa
+     * membuat migration unique index sebelum Slice 2 diotorisasi.
+     */
+    protected function createExecutionForStart(
+        PmScheduleDate $scheduleDate,
+        Machine $machine,
+        User $operator,
+    ): PmExecution {
+        return PmExecution::query()->create([
+            'pm_schedule_date_id' => $scheduleDate->id,
+            'machine_id' => $machine->id,
+            'operator_id' => $operator->id,
+            'operator_name_snapshot' => $operator->name,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+    }
+
+    /**
+     * Memastikan hanya named index canonical yang diperlakukan sebagai retry.
+     */
+    protected function isCanonicalScheduleDateCollision(UniqueConstraintViolationException $exception): bool
+    {
+        $canonicalIndex = 'pm_executions_pm_schedule_date_id_unique';
+        $errorInfo = $exception->errorInfo ?? [];
+        $evidence = implode(' ', array_map(static fn ($value): string => (string) $value, [
+            $exception->getMessage(),
+            $exception->getPrevious()?->getMessage(),
+            ...$errorInfo,
+        ]));
+
+        return str_contains($evidence, $canonicalIndex)
+            && preg_match('/^insert\s+into\s+[`"]?pm_executions[`"]?/i', trim($exception->getSql())) === 1;
     }
 }
