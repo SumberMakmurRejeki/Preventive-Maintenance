@@ -336,7 +336,12 @@ class PmChecksheetService
         return [
             'selected_machine_ids' => $selectedMachineIds,
             'parts' => $parts,
-            'standards' => $standards,
+            // Checksheet tanpa part menghasilkan $standards = [] (array PHP kosong).
+            // json_encode mengubah array kosong menjadi "[]", bukan "{}", sehingga
+            // JS menerima Array alih-alih Object dan kehilangan assignment key dinamis.
+            // Cast ke stdClass hanya saat kosong agar array berisi entry tetap dikodekan
+            // sebagai object JSON dengan key string — array PHP berisi entry sudah aman.
+            'standards' => $standards === [] ? new \stdClass() : $standards,
             'schedule' => $schedule,
         ];
     }

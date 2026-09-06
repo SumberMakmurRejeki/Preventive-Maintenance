@@ -1065,4 +1065,67 @@ class MasterPmChecksheetTest extends TestCase
         );
         $this->assertDatabaseHas('pm_checksheets', ['id' => $checksheet->id]);
     }
+
+    /**
+     * Regresi: toWizardPayload() harus mengeluarkan standards sebagai JSON object ("{}"),
+     * bukan JSON array ("[]"), ketika checksheet belum memiliki part/standard.
+     *
+     * Akar masalah: $standards = [] di PHP di-encode menjadi "[]" oleh json_encode,
+     * sehingga JS menerima Array. Assignment key dinamis (partId) pada Array
+     * diabaikan oleh JSON.stringify, dan payload standards ke server selalu kosong.
+     *
+     * Dua sub-kasus:
+     *  (a) Checksheet tanpa part → standards harus "{}" (stdClass/object JSON).
+     *  (b) Checksheet dengan part dan standard → standards harus berupa object
+     *      dengan key string partId (bukan numerik) dan value array standard.
+     */
+    public function test_toWizardPayload_standards_is_json_object_for_empty_and_non_empty(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-15 00:00:00', 'Asia/Jakarta'));
+
+        // ── (a) Checksheet tanpa part ─────────────────────────────────────────
+        $checksheetEmpty = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-REGRESSION-EMPTY',
+            'checksheet_name' => 'Regression Empty Standards',
+            'is_active' => true,
+        ]);
+
+        PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheetEmpty->id,
+            'machine_id' => $this->machine->id,
+        ]);
+
+        $checksheetEmpty->load('machineAssignments.parts.standards');
+        /** @var \App\Services\Master\PmChecksheetService $service */
+        $service = $this->app->make(\App\Services\Master\PmChecksheetService::class);
+
+        $payloadEmpty = $service->toWizardPayload($checksheetEmpty);
+        $encodedEmpty = json_encode($payloadEmpty['standards'], JSON_THROW_ON_ERROR);
+
+        // Harus "{}" bukan "[]" — JS hanya menerima Object dengan aman.
+        $this->assertSame('{}', $encodedEmpty, 'standards kosong harus dikodekan sebagai object JSON');
+        $this->assertIsObject($payloadEmpty['standards'], 'standards kosong harus berupa stdClass, bukan array PHP');
+
+        // ── (b) Checksheet dengan part dan standard ───────────────────────────
+        $this->test_admin_can_create_checksheet_with_nested_data(); // menanam PM-CH-001
+        $checksheetFull = PmChecksheet::query()
+            ->where('checksheet_code', 'PM-CH-001')
+            ->with('machineAssignments.parts.standards')
+            ->firstOrFail();
+
+        $payloadFull = $service->toWizardPayload($checksheetFull);
+        $encodedFull = json_encode($payloadFull['standards'], JSON_THROW_ON_ERROR);
+        $decoded      = json_decode($encodedFull, false, 512, JSON_THROW_ON_ERROR);
+
+        // Harus berupa object JSON dengan key string partId.
+        $this->assertInstanceOf(\stdClass::class, $decoded, 'standards berisi entry harus dikodekan sebagai JSON object');
+
+        // Key harus berupa string partId (bukan indeks numerik) dan value-nya array standard.
+        $keys = array_keys((array) $decoded);
+        $this->assertNotEmpty($keys, 'standards object harus memiliki minimal satu key partId');
+        foreach ($keys as $key) {
+            $this->assertMatchesRegularExpression('/^\d+$/', (string) $key, "key partId harus berupa string numerik, dapat: {$key}");
+            $this->assertIsArray((array) $decoded->{$key}, "value standards[{$key}] harus berupa array");
+        }
+    }
 }
