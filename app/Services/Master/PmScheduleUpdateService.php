@@ -2,6 +2,7 @@
 
 namespace App\Services\Master;
 
+use App\Models\Machine;
 use App\Models\PmChecksheet;
 use App\Models\PmChecksheetMachine;
 use App\Models\PmSchedule;
@@ -332,6 +333,29 @@ class PmScheduleUpdateService
             $lockedChecksheet = PmChecksheet::query()
                 ->lockForUpdate()
                 ->findOrFail($checksheet->id);
+
+            // TASK-003 Slice 3: Ambil SEMUA ID mesin yang ter-assign ke checksheet ini.
+            // Berbeda dengan reconcileScheduleDates() yang hanya perlu mesin berj
+            // adwal aktif, apply() memanggil persistScheduleConfig() yang dapat
+            // membuat/mengaktifkan jadwal untuk assignment tanpa jadwal aktif.
+            // Semua mesin tersebut harus dikunci sebelum mutation untuk menjaga
+            // causal lock boundary terhadap MachineService::delete().
+            $machineIds = PmChecksheetMachine::query()
+                ->where('pm_checksheet_id', $lockedChecksheet->id)
+                ->orderBy('machine_id', 'asc')
+                ->pluck('machine_id')
+                ->unique()
+                ->values()
+                ->all();
+
+            // TASK-003 Slice 3: Kunci mesin berurutan ascending SEBELUM jadwal
+            if (! empty($machineIds)) {
+                Machine::query()
+                    ->whereIn('id', $machineIds)
+                    ->orderBy('id', 'asc')
+                    ->lockForUpdate()
+                    ->get();
+            }
 
             // Laravel meneruskan Relations\HasMany untuk eager-load bertingkat,
             // bukan Builder, sehingga closure tidak diberi type-hint Builder.
