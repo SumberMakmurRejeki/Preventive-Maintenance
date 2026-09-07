@@ -1321,6 +1321,132 @@ class PmExecutorTest extends TestCase
     }
 
     /**
+     * Slice A: eksekusi baru menangkap identitas mesin, lokasi, dan checksheet dari parent authoritative.
+     */
+    public function test_slice_a_new_execution_persists_transaction_identity_snapshots(): void
+    {
+        $execution = app(PmExecutionService::class)->startExecutionOnly(
+            request: $this->s1Request(),
+            machine: $this->machine,
+            operator: $this->operator,
+        );
+
+        $this->assertSame('UC-001', $execution->machine_code_snapshot);
+        $this->assertSame('MOTOR SERVO', $execution->machine_name_snapshot);
+        $this->assertSame('LOC-01', $execution->location_code_snapshot);
+        $this->assertSame('Upcast', $execution->location_name_snapshot);
+        $this->assertSame('PM-CH-UC-001', $execution->checksheet_code_snapshot);
+        $this->assertSame('Checksheet UC-001', $execution->checksheet_name_snapshot);
+        $this->assertSame($this->machine->id, $execution->machine_id);
+        $this->assertSame($this->scheduleDate->id, $execution->pm_schedule_date_id);
+    }
+
+    /**
+     * Slice A: reuse canonical tidak pernah menulis ulang snapshot transaction identity.
+     */
+    public function test_slice_a_canonical_reuse_keeps_original_identity_snapshots(): void
+    {
+        $service = app(PmExecutionService::class);
+        $first = $service->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+        $original = $first->only([
+            'machine_code_snapshot', 'machine_name_snapshot',
+            'location_code_snapshot', 'location_name_snapshot',
+            'checksheet_code_snapshot', 'checksheet_name_snapshot',
+        ]);
+
+        $this->machine->forceFill(['machine_code' => 'UC-RENAMED', 'machine_name' => 'MOTOR RENAMED'])->save();
+        $this->machine->location->forceFill(['location_code' => 'LOC-RENAMED', 'location_name' => 'Lokasi Renamed'])->save();
+        $this->scheduleDate->schedule->checksheetMachine->checksheet->forceFill([
+            'checksheet_code' => 'PM-RENAMED',
+            'checksheet_name' => 'Checksheet Renamed',
+        ])->save();
+
+        $second = $service->startExecutionOnly($this->s1Request(), $this->machine->fresh(), $this->operator);
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertSame($original, $second->fresh()->only(array_keys($original)));
+    }
+
+    /**
+     * Slice A: legacy row dengan snapshot NULL tetap dapat dibaca tanpa backfill.
+     */
+    public function test_slice_a_legacy_execution_with_null_snapshots_remains_readable(): void
+    {
+        $execution = PmExecution::query()->create([
+            'pm_schedule_date_id' => $this->scheduleDate->id,
+            'machine_id' => $this->machine->id,
+            'operator_id' => $this->operator->id,
+            'operator_name_snapshot' => $this->operator->name,
+            'status' => 'in_progress',
+            'started_at' => now(),
+        ]);
+
+        $loaded = PmExecution::query()->findOrFail($execution->id);
+        $this->assertNull($loaded->machine_code_snapshot);
+        $this->assertNull($loaded->checksheet_name_snapshot);
+    }
+
+    /**
+     * Slice A: lokasi authoritative yang hilang menghentikan creation sebelum insert.
+     */
+    public function test_slice_a_missing_location_fails_closed_before_new_execution_insert(): void
+    {
+        $this->machine->location->delete();
+
+        try {
+            app(PmExecutionService::class)->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+            $this->fail('Lokasi soft-deleted harus menolak execution baru.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('lokasi', mb_strtolower(collect($e->errors())->flatten()->first()));
+        }
+
+        $this->assertSame(0, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * Slice A: checksheet trashed (soft-deleted) gagal closed sebelum insert execution baru.
+     */
+    public function test_slice_a_missing_checksheet_fails_closed_before_new_execution_insert(): void
+    {
+        $checksheet = $this->scheduleDate->schedule->checksheetMachine->checksheet;
+        $checksheet->delete();
+
+        try {
+            app(PmExecutionService::class)->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+            $this->fail('Checksheet soft-deleted harus menolak execution baru.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('checksheet', mb_strtolower(collect($e->errors())->flatten()->first()));
+        }
+
+        $this->assertSame(0, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
+     * Slice A: assignment provenance mismatch (checksheetMachine.machine_id ≠ locked Machine.id)
+     * fail closed sebelum insert execution baru.
+     */
+    public function test_slice_a_assignment_machine_mismatch_fails_closed(): void
+    {
+        $otherMachine = Machine::query()->create([
+            'location_id' => $this->machine->location_id,
+            'machine_code' => 'UC-MISMATCH',
+            'machine_name' => 'MOTOR Mismatch',
+            'qr_token' => 'qr-uc-mismatch',
+            'is_active' => true,
+        ]);
+        $this->scheduleDate->schedule->checksheetMachine->forceFill(['machine_id' => $otherMachine->id])->save();
+
+        try {
+            app(PmExecutionService::class)->startExecutionOnly($this->s1Request(), $this->machine, $this->operator);
+            $this->fail('Assignment machine mismatch harus menolak execution baru.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('tidak sesuai', mb_strtolower(collect($e->errors())->flatten()->first()));
+        }
+
+        $this->assertSame(0, PmExecution::withTrashed()->where('pm_schedule_date_id', $this->scheduleDate->id)->count());
+    }
+
+    /**
      * Membuat execution dan dua file media deterministik untuk assertion lifecycle.
      */
     private function createExecutionWithMedia(string $status, array $overrides = []): PmExecution

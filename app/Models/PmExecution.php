@@ -26,6 +26,13 @@ class PmExecution extends Model
         'approved_by',
         'approved_by_name_snapshot',
         'review_note',
+        // ADR-007 Slice A: snapshot identitas transaksi; immutable setelah creation.
+        'machine_code_snapshot',
+        'machine_name_snapshot',
+        'location_code_snapshot',
+        'location_name_snapshot',
+        'checksheet_code_snapshot',
+        'checksheet_name_snapshot',
     ];
 
     protected function casts(): array

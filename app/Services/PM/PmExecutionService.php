@@ -637,8 +637,60 @@ class PmExecutionService
     }
 
     /**
+     * ADR-007 Slice A: mengumpulkan snapshot identitas transaksi dari parent authoritative.
+     * Lokasi wajib; checksheet wajib; assignment provenance wajib sama dengan machine terkunci.
+     * Semua kegagalan bersifat fail-closed SEBELUM insert execution.
+     *
+     * @return array{machine_code_snapshot:string, machine_name_snapshot:string, location_code_snapshot:string, location_name_snapshot:string, checksheet_code_snapshot:string, checksheet_name_snapshot:string}
+     *
+     * @throws ValidationException
+     */
+    protected function resolveTransactionIdentitySnapshots(
+        Machine $lockedMachine,
+        PmScheduleDate $scheduleDate,
+    ): array {
+        // Lokasi authoritative dari machine terkunci; soft-delete/unresolvable ditolak.
+        $location = $lockedMachine->location()->first();
+
+        if (! $location) {
+            throw ValidationException::withMessages([
+                'machine' => 'Lokasi mesin tidak tersedia; PM tidak dapat dimulai.',
+            ]);
+        }
+
+        // Rantai provenance: ScheduleDate → Schedule → ChecksheetMachine → Checksheet.
+        $scheduleDate->loadMissing('schedule.checksheetMachine.checksheet');
+        $checksheetMachine = $scheduleDate->schedule?->checksheetMachine;
+        $checksheet = $checksheetMachine?->checksheet;
+
+        if (! $checksheetMachine || ! $checksheet) {
+            throw ValidationException::withMessages([
+                'machine' => 'Provenance checksheet PM tidak ditemukan; PM tidak dapat dimulai.',
+            ]);
+        }
+
+        // Assignment provenance wajib menunjuk machine terkunci.
+        if ((int) $checksheetMachine->machine_id !== (int) $lockedMachine->id) {
+            throw ValidationException::withMessages([
+                'machine' => 'Provenance checksheet tidak sesuai dengan mesin occurrence; PM tidak dapat dimulai.',
+            ]);
+        }
+
+        // Snapshot diambil dari model authoritative — bukan request/controller/frontend.
+        return [
+            'machine_code_snapshot' => (string) $lockedMachine->machine_code,
+            'machine_name_snapshot' => (string) $lockedMachine->machine_name,
+            'location_code_snapshot' => (string) $location->location_code,
+            'location_name_snapshot' => (string) $location->location_name,
+            'checksheet_code_snapshot' => (string) $checksheet->checksheet_code,
+            'checksheet_name_snapshot' => (string) $checksheet->checksheet_name,
+        ];
+    }
+
+    /**
      * Memisahkan boundary insert agar klasifikasi collision dapat diuji tanpa
      * membuat migration unique index sebelum Slice 2 diotorisasi.
+     * ADR-007 Slice A: snapshot identitas transaksi ikut di-insert pada creation yang sama.
      */
     protected function createExecutionForStart(
         PmScheduleDate $scheduleDate,
@@ -652,6 +704,7 @@ class PmExecutionService
             'operator_name_snapshot' => $operator->name,
             'status' => 'in_progress',
             'started_at' => now(),
+            ...$this->resolveTransactionIdentitySnapshots($machine, $scheduleDate),
         ]);
     }
 
