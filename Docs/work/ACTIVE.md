@@ -1,13 +1,13 @@
 # Active Work
 
-**Last Updated:** 2026-09-07
+**Last Updated:** 2026-09-08
 
 **Roadmap Phase:** Phase 2 — Historical Truth & Transaction Snapshot Foundation
 **Authoritative Roadmap:** `Docs/roadmap.md`
-**Current Task:** ADR-007 — Transaction Snapshot Strategy — current implementation audit
+**Current Task:** ADR-007 Slice B — Historical Read-Side Consistency — bounded analysis / planning
 **Planning Document:** `Docs/roadmap.md` (canonical current position)
-**Previous Task:** Phase 1 — Repository & Schema Integration Baseline (**CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**)
-**Status:** Phase 1 **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**; Phase 2 **ACTIVE FOR ANALYSIS / PLANNING**; ADR-007 implementation **NOT STARTED**
+**Previous Task:** ADR-007 Slice A — Transaction Identity Snapshots (**CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**)
+**Status:** Phase 2 **ACTIVE**; ADR-007 Slice A **CLOSED / PASS / MANAGER ACCEPTED**; ADR-007 Slice B **NEXT / PLANNING ONLY**; Slice B implementation **NOT AUTHORIZED**
 
 ## Current ADR Assessment
 
@@ -56,23 +56,27 @@ R4 NULL/manual control tidak berlaku karena current FK adalah NOT NULL.
 
 ## Current Handoff
 
-**Next Action:** `ADR-007 bounded current implementation / gap audit`
+**Next Action:** `ADR-007 Slice B bounded current-reader assessment / implementation planning`
 
-**Implementation status:** TASK-004 dan ADR-004 telah selesai dan diterima. Slice 1 dan Slice 2 **ACCEPTED**; Slice 3 **COMPLETE — ACCEPTED**; R1/R2/R3 **PASS**; scoped regression **PASS — 90 tests / 413 assertions / 0 failures / 0 errors**; independent final review **PASS WITH NON-BLOCKING NOTES**; blocking findings **NONE**. Current Phase 1.1 required work is complete; Phase 1.2 and Phase 1.3 are **CLOSED / PASS**; PR1–PR3 and FR1–FR2 are captured and accepted.
+**Implementation status:** ADR-007 Slice A delivered transaction-level snapshots for machine code/name, location code/name, and checksheet code/name while retaining existing provenance foreign keys. Slice A passed implementation verification, SQLite regression, MySQL rehearsal, real Laravel Migrator verification, independent review, and manager acceptance.
 
-**Git execution status:** Git hygiene read-only audit and required C1–C10 reconstruction **COMPLETE**. Branch `develop`, HEAD `d541d8d8ba46a12e60d77d506e4dadc38b22d5cf`, staged files `0`, and no push performed. No checkpoint split or logical commit queue remains pending.
+**Slice-A code checkpoint:** Commit `8f47e05d955b5f2a50a49228bfd90c40bcb8f893` (`feat(pm): snapshot execution transaction identity`) is committed and pushed to `origin/develop`.
 
-**Canonical roadmap synchronization:** `Docs/roadmap.md` is authoritative. Phase 1 is closed and Phase 2 is active for analysis / planning only; no implementation is authorized.
+**Canonical roadmap synchronization:** `Docs/roadmap.md` is authoritative. Phase 2 remains active. ADR-007 Slice A is closed; Slice B is the next planning gate. No Slice B implementation is authorized.
 
 ### Current closure checkpoint
 
-Phase 1 exit gate: **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07**.
+ADR-007 Slice A: **CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED — 2026-09-07**.
+
+ADR-007 overall remains **PARTIAL / IN PROGRESS**. Historical read-side consistency, reviewer/history provenance work, and explicit finalized correction policy remain open.
 
 PR4 remains **HOLD / NON-BLOCKING**. C11 / P2 remains **HOLD / NOT AUTHORIZED**.
 
 ### Current Git checkpoint
 
-`develop` / `d541d8d8ba46a12e60d77d506e4dadc38b22d5cf` / staged files `0`; no push performed.
+Published Slice-A code checkpoint: `develop` / `8f47e05d955b5f2a50a49228bfd90c40bcb8f893` / staged files `0`. This SHA is the parent code checkpoint for the documentation/state synchronization commit.
+
+<!-- Historical checkpoint (pre-Slice-A): Phase 1 exit gate CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07; Git checkpoint d541d8d8ba46a12e60d77d506e4dadc38b22d5cf; no push performed at that time. -->
 
 ### Current Slice 2 Verification and Closure — 2026-09-02/03
 

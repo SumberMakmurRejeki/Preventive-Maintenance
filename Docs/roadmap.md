@@ -20,10 +20,10 @@
 | ---------------------------- | ------------------------------------------------------------ |
 | Last Updated                 | 2026-09-07                                                   |
 | Current Phase                | Phase 2 — Historical Truth & Transaction Snapshot Foundation |
-| Current Task                 | ADR-007 — Transaction Snapshot Strategy — current implementation audit / planning |
-| Last Closed Item             | Phase 1 — Repository & Schema Integration Baseline — CLOSED / EXIT GATE PASS |
-| Current Gate                 | Phase 1 closure accepted; Phase 2 analysis-planning active |
-| Next Gate                    | ADR-007 current implementation and gap assessment |
+| Current Task                 | ADR-007 Slice B — Historical Read-Side Consistency — planning / analysis next |
+| Last Closed Item             | ADR-007 Slice A — Transaction Identity Snapshots — CLOSED / PASS / MANAGER ACCEPTED — 2026-09-07 |
+| Current Gate                 | Bounded Slice B current-reader assessment / implementation planning |
+| Next Gate                    | ADR-007 Slice B bounded analysis / planning (implementation NOT AUTHORIZED) |
 
 | V1 Status                    | NOT READY                                                    |
 | Implementation Authorization | NONE FOR COMMIT EXECUTION UNTIL USER + CHATGPT APPROVAL      |
@@ -34,7 +34,7 @@
 | ----- | ---- | --------------- | ------------------------ | --------- | ------- |
 | 0 | Current Work Closure & Development Baseline | CLOSED | TASK-004 / ADR-004 CLOSED; TASK-005 CLOSED; R1/R2/R3 PASS; regression PASS; independent review PASS; manager acceptance complete | Phase 0 exit gate PASS | 2026-09-05 |
 | 1 | Repository & Schema Integration Baseline | CLOSED / EXIT GATE PASS | C1–C10; PR1–PR3; FR1–FR2 complete / accepted; manager acceptance complete | Phase 2 activation for analysis-planning | 2026-09-07 |
-| 2 | Historical Truth & Transaction Snapshot Foundation | ACTIVE / ANALYSIS-PLANNING | ADR-007 current implementation audit / planning | ADR-007 current implementation and gap assessment | 2026-09-07 |
+| 2 | Historical Truth & Transaction Snapshot Foundation | ACTIVE | ADR-007 Slice A CLOSED / PASS / MANAGER ACCEPTED (2026-09-07); published checkpoint 8f47e05 | Bounded Slice B analysis / planning | 2026-09-07 |
 | 3 | PM Lifecycle & Planning Completion | NOT STARTED | — | Activate after Phase 2 closure and authorization | 2026-09-04 |
 | 4 | PM Configuration Integrity & Stable Option Identity | NOT STARTED | — | Activate after Phase 3 closure and authorization | 2026-09-04 |
 | 5 | Historical PM | NOT STARTED | — | Activate after Phase 4 closure and authorization | 2026-09-04 |
@@ -71,7 +71,7 @@
 - [x] Phase 0 exit gate — PASS
 - [x] Phase 0 — CLOSED
 
-### **YOU ARE HERE:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — active for analysis-planning.
+### **YOU ARE HERE:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — ADR-007 Slice A CLOSED; Slice B planning next.
 
 
 <!-- PRIME-MANUAL-TRACKING:START -->
@@ -116,6 +116,7 @@ This block may be edited manually by the User. Future automated synchronization 
 | 2026-09-05 | TASK-004 Slice 3 | R1/R2/R3 PASS; scoped regression 90 tests / 413 assertions / 0 failures / 0 errors | `Docs/work/session-reports/2026-09-05-PRIME-TASK-004-S3-execution-verification-attempt-3.md |
 | 2026-09-05 | Phase 1.1 Git Hygiene | C1–C10 reconstruction COMPLETE; Phase 1.1 DONE | Git hygiene audit and accepted checkpoint evidence |
 | 2026-09-07 | Phase 1 closure synchronization | HEAD d541d8d; staged files 0; PR1–PR3 and FR1–FR2 complete / accepted; Phase 1 exit gate READY FOR MANAGER CLOSURE | Current Git checkpoint and accepted reconstruction history |
+| 2026-09-07 | ADR-007 Slice A — Transaction Identity Snapshots | CLOSED / PASS / MANAGER ACCEPTED — published checkpoint 8f47e05 | Commit: feat(pm): snapshot execution transaction identity; 4 files, 229 insertions; SQLite regression, MySQL rehearsal, Laravel Migrator verification, independent review, manager acceptance all PASS |
 
 
 ### Future Tracker Item Template
