@@ -9,7 +9,7 @@
 **Technical validation:** PASS WITH NON-BLOCKING NOTES
 **Implementation authorization:** NONE BY ROADMAP ALONE — roadmap ini sendiri tidak mengotorisasi implementasi apa pun
 **Canonical document:** `Docs/roadmap.md`
-**Current operational position:** Phase 2 — Historical Truth & Transaction Snapshot Foundation / active for analysis-planning
+**Current operational position:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — ADR-007 Slice A CLOSED; Slice B analysis/planning next
 
 **Approved management source:** `Docs/work/MASTER-ROADMAP-PRIME-v1-FINAL.md`
 **Repository validation evidence:** `Docs/work/session-reports/2026-09-03-PRIME-master-roadmap-v1-final-repository-validation.md`
@@ -306,51 +306,42 @@ Ini menjawab kekurangan terbesar pada Draft v1: V1 gate sebelumnya sudah mempuny
 
 ```text
 
-PHASE 1
-Repository & Schema Integration Baseline
+PHASE 2
+Historical Truth & Transaction Snapshot Foundation
 
-Phase 0
-├── TASK-005: CLOSED / PASS — MANAGER ACCEPTED
-├── TASK-004 Slice 1: ACCEPTED
-├── TASK-004 Slice 2: ACCEPTED
-├── TASK-004 Slice 3: COMPLETE — ACCEPTED
-├── R1 / R2 / R3: PASS
-├── Scoped regression: PASS
-├── Independent final review: PASS WITH NON-BLOCKING NOTES
-├── TASK-004: CLOSED / MANAGER ACCEPTED
-└── ADR-004: Accepted — Implemented + Verified
+ADR-007 Slice A: CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+Published code checkpoint: 8f47e05d955b5f2a50a49228bfd90c40bcb8f893
 
-Phase 0 exit gate: PASS / CLOSED
+ADR-007 Slice B: Historical Read-Side Consistency — NEXT / PLANNING ONLY
+
+Phase 2 status: ACTIVE
+ADR-007 overall: PARTIAL / IN PROGRESS
 ```
 
 Current evidence:
 
 ```text
-Git hygiene audit: COMPLETE
+Published Slice-A code checkpoint:
+develop / 8f47e05d955b5f2a50a49228bfd90c40bcb8f893
+4 files, 229 insertions
+All verification gates PASS
 
-Protected Git checkpoint:
-branch develop
-HEAD d541d8d8ba46a12e60d77d506e4dadc38b22d5cf
-staged 0
-No push performed
+Closure/docs sync commit:
+develop / 089b3db3118b21b1ea81c6147d2da56e1b4659d3
 
-C1–C10 reconstruction COMPLETE
-PR1 / PR2 / PR3 COMPLETE — PASS / MANAGER ACCEPTED
-FR1 / FR2 COMPLETE — PASS / MANAGER ACCEPTED
-Phase 1.1 required reproducibility work COMPLETE
-Phase 1.2 CLOSED / PASS
-Phase 1.3 CLOSED / PASS
-Required Phase 1 residual blockers CAPTURED
-```
+Slice-A status: CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+Phase 1: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
+Phase 2: ACTIVE
+ADR-007 overall: PARTIAL / IN PROGRESS
 
 Current remaining sequence:
-
-```text
-Phase 1 CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
+ADR-007 Slice A CLOSED / PASS / MANAGER ACCEPTED
 ↓
-Phase 2 active for analysis / planning
+ADR-007 Slice B — Historical Read-Side Consistency
 ↓
-ADR-007 current implementation and gap assessment
+bounded current-reader assessment / implementation planning
+↓
+implementation NOT AUTHORIZED for Slice B
 ```
 
 No commit execution is authorized by this roadmap update alone.
@@ -549,7 +540,7 @@ PR1 / PR2 / PR3 COMPLETE — PASS / MANAGER ACCEPTED
 FR1 / FR2 COMPLETE — PASS / MANAGER ACCEPTED
 TASK-004 migration committed in C10
 TASK-005 isolation work committed in C8
-Next gate: Phase 2 — ADR-007 current implementation and gap assessment
+Next gate: ADR-007 Slice B — Historical Read-Side Consistency — bounded current-reader assessment / implementation planning
 ```
 
 
@@ -660,9 +651,9 @@ Phase 1 exit gate: **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07**
 # PHASE 2 — Historical Truth & Transaction Snapshot Foundation
 **Status: ACTIVE / ANALYSIS-PLANNING**
 
-**Current work:** ADR-007 — Transaction Snapshot Strategy — current implementation audit / planning
+**Current work:** ADR-007 Slice B — Historical Read-Side Consistency — bounded analysis / planning
 
-**Next gate:** ADR-007 current implementation and gap assessment
+**Next gate:** ADR-007 Slice B current-reader assessment / implementation planning
 
 ## Objective
 
@@ -2044,7 +2035,9 @@ CURRENT POSITION
 PHASE 2
 Historical Truth & Transaction Snapshot Foundation
 ↓
-ADR-007 — current implementation audit / planning
+ADR-007 Slice A — CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+↓
+ADR-007 Slice B — Historical Read-Side Consistency — bounded analysis / planning
 
 PHASE 1
 Repository & Schema Integration Baseline
@@ -2072,13 +2065,15 @@ Phase 1.1 — DONE
 Phase 1.2 — CLOSED / PASS
 Phase 1.3 — CLOSED / PASS
 Required Phase 1 residual blockers — CAPTURED
-Phase 2 — ACTIVE / ANALYSIS-PLANNING
+Phase 2 — ACTIVE
 
 CURRENT GATE
-Phase 2 analysis-planning active; implementation not authorized
+Slice B current-reader assessment / implementation planning
 
 NEXT MANAGEMENT GATE
-ADR-007 current implementation and gap assessment
+ADR-007 Slice B bounded current-reader assessment / implementation planning
+implementation NOT AUTHORIZED for Slice B
+
 ```
 
 No Git index mutation or commit is authorized by this roadmap update alone.
@@ -2137,20 +2132,26 @@ Implementation authorization:
 NONE BY ROADMAP ALONE
 
 Current phase:
-Phase 2 — Historical Truth & Transaction Snapshot Foundation
+Phase 2 — Historical Truth & Transaction Snapshot Foundation — ACTIVE
+
+Current Slice-A status:
+ADR-007 Slice A — Transaction Identity Snapshots — CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+
+Published Slice-A code checkpoint:
+8f47e05d955b5f2a50a49228bfd90c40bcb8f893
 
 Current work:
-ADR-007 — Transaction Snapshot Strategy — current implementation audit / planning
+ADR-007 Slice B — Historical Read-Side Consistency — bounded analysis / planning
 
-Last closed task:
-Phase 1 — Repository & Schema Integration Baseline — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
-
-ADR-004:
-Accepted — Implemented + Verified
+ADR-007 overall:
+PARTIAL / IN PROGRESS
 
 Current Git gate:
-develop / HEAD d541d8d8ba46a12e60d77d506e4dadc38b22d5cf / staged 0 — C1–C10 reconstruction complete; PR1–PR3 and FR1–FR2 accepted
+develop / HEAD 089b3db3118b21b1ea81c6147d2da56e1b4659d3 / staged 0
 
 Next management handoff:
-ADR-007 current implementation and gap assessment.
+ADR-007 Slice B current-reader assessment / implementation planning
+
+Slice B implementation authorization:
+NONE
 ```
