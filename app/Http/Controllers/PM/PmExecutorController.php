@@ -110,7 +110,7 @@ class PmExecutorController extends Controller
             return redirect()->route('login');
         }
 
-        $context = $this->pmExecutionService->getExecutorContext($machine);
+        // Start resolver membaca ulang occurrence canonical; jangan memakai context halaman yang stale.
         $execution = $this->pmExecutionService->startExecutionOnly(
             request: $request,
             machine: $machine,
@@ -118,23 +118,20 @@ class PmExecutorController extends Controller
         );
 
         $partId = (int) $request->validated('part_id');
-        $part = $partId > 0
-            ? $context['parts']->first(fn (PmChecksheetPart $candidate): bool => (int) $candidate->id === $partId)
-            : null;
         $file = $request->file('media_file');
 
         if (! $file) {
             return redirect()->route('pm-executor.show', $machine)->with('flash_error', 'File media tidak ditemukan.');
         }
-
+        // Service menerima ID mentah lalu memvalidasinya terhadap occurrence yang terkunci.
         $media = $this->mediaService->storeForExecution(
             execution: $execution,
-            part: $part,
+            part: null,
             file: $file,
             operator: $operator,
             note: $request->validated('part_note'),
+            partId: $partId > 0 ? $partId : null,
         );
-
         if ($request->expectsJson()) {
             return response()->json([
                 'message' => 'Media PM berhasil diupload.',

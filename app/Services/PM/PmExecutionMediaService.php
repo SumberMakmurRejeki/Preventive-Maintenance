@@ -23,6 +23,7 @@ class PmExecutionMediaService
         UploadedFile $file,
         ?User $operator,
         ?string $note = null,
+        ?int $partId = null,
     ): PmExecutionMedia {
         $mimeType = (string) $file->getMimeType();
 
@@ -48,25 +49,57 @@ class PmExecutionMediaService
             ]);
         }
 
-        $storedPath = $file->store('pm-execution-media', 'public');
+        return DB::transaction(function () use ($execution, $part, $partId, $file, $operator, $note, $fileType, $mimeType, $fileSize): PmExecutionMedia {
+            // Kunci execution lebih dahulu agar upload stale tidak mendahului submit.
+            $lockedExecution = PmExecution::query()
+                ->lockForUpdate()
+                ->findOrFail($execution->id);
 
-        return PmExecutionMedia::query()->create([
-            'pm_execution_id' => $execution->id,
-            'pm_execution_item_id' => null,
-            'pm_checksheet_part_id' => $part?->id,
-            'part_name_snapshot' => $part?->part_name,
-            'file_type' => $fileType,
-            'file_path' => $storedPath,
-            'original_file_path' => $storedPath,
-            'file_name' => $file->getClientOriginalName(),
-            'mime_type' => $mimeType,
-            'file_size' => $fileSize,
-            'original_file_size' => $fileSize,
-            'compressed_file_size' => $fileSize,
-            'note' => $note,
-            'uploaded_by' => $operator?->id,
-            'uploaded_by_name_snapshot' => $operator?->name,
-        ]);
+            if ($lockedExecution->status !== 'in_progress') {
+                throw ValidationException::withMessages([
+                    'media_files' => 'Media PM hanya dapat diunggah saat PM sedang dikerjakan.',
+                ]);
+            }
+
+            // Part ID wajib diverifikasi ulang terhadap checksheet occurrence yang terkunci;
+            // context controller tidak dipercaya sebagai sumber keputusan.
+            $requestedPartId = $partId ?? $part?->id;
+            $resolvedPart = null;
+            if ($requestedPartId) {
+                $lockedExecution->loadMissing('scheduleDate.schedule.checksheetMachine');
+                $checksheetMachineId = $lockedExecution->scheduleDate?->schedule?->pm_checksheet_machine_id;
+                $resolvedPart = PmChecksheetPart::query()
+                    ->whereKey($requestedPartId)
+                    ->where('pm_checksheet_machine_id', $checksheetMachineId)
+                    ->first();
+
+                if (! $resolvedPart) {
+                    throw ValidationException::withMessages([
+                        'part_id' => 'Part media tidak sesuai dengan checksheet occurrence PM.',
+                    ]);
+                }
+            }
+
+            $storedPath = $file->store('pm-execution-media', 'public');
+
+            return PmExecutionMedia::query()->create([
+                'pm_execution_id' => $lockedExecution->id,
+                'pm_execution_item_id' => null,
+                'pm_checksheet_part_id' => $resolvedPart?->id,
+                'part_name_snapshot' => $resolvedPart?->part_name,
+                'file_type' => $fileType,
+                'file_path' => $storedPath,
+                'original_file_path' => $storedPath,
+                'file_name' => $file->getClientOriginalName(),
+                'mime_type' => $mimeType,
+                'file_size' => $fileSize,
+                'original_file_size' => $fileSize,
+                'compressed_file_size' => $fileSize,
+                'note' => $note,
+                'uploaded_by' => $operator?->id,
+                'uploaded_by_name_snapshot' => $operator?->name,
+            ]);
+        });
     }
 
     /**

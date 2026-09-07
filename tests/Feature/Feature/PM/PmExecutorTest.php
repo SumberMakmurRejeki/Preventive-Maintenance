@@ -680,6 +680,139 @@ class PmExecutorTest extends TestCase
     }
 
     /**
+     * Test A — submit dengan lifecycle tersimpan yang sudah keluar dari in_progress
+     * ditolak oleh canonical resolver sebelum mutasi item/media apapun.
+     *
+     * ADR-004: caller snapshot/context tidak menjadi sumber keputusan; resolver
+     * selalu membaca ulang occurrence dan execution dari database dengan lock,
+     * lalu menolak waiting_review sebagai occurrence yang sudah diproses.
+     */
+    public function test_stale_submit_is_rejected_before_any_draft_mutation(): void
+    {
+        // Execution in_progress dibuat sebagai kondisi awal; setelah ini status
+        // database diubah ke waiting_review sehingga request berikutnya harus
+        // melihat kondisi persisted, bukan kondisi in-memory yang lama.
+        $execution = $this->createExecutionWithMedia('in_progress', ['started_at' => now()->subMinutes(5)]);
+
+        // Ubah status di database setelah kondisi awal dibuat; request stale
+        // tidak boleh memakai snapshot in_progress yang sudah tidak valid.
+        PmExecution::query()->whereKey($execution->id)->update(['status' => 'waiting_review']);
+
+        // Snapshot jumlah item/media sebelum request untuk membuktikan zero mutation.
+        $staleItemCount = \DB::table('pm_execution_items')->where('pm_execution_id', $execution->id)->count();
+        $staleMediaCount = $execution->media()->count();
+
+        try {
+            app(PmExecutionService::class)->startOrSaveDraft(
+                request: Request::create('/'),
+                machine: $this->machine,
+                operator: $this->operator,
+                actionValues: [$this->actionStandard->id => 'OK'],
+                numberValues: [$this->numberStandard->id => '60', $this->rangeStandard->id => '120'],
+                partNotes: [],
+            );
+            $this->fail('Diharapkan ValidationException saat lifecycle persisted tidak in_progress.');
+        } catch (ValidationException $e) {
+            $this->assertSame(
+                'PM untuk occurrence ini sudah diproses dan tidak dapat dimulai ulang.',
+                collect($e->errors())->flatten()->first(),
+            );
+        }
+
+        // Tidak ada item atau media baru yang dibuat; lifecycle tidak berubah.
+        $this->assertSame($staleItemCount, (int) \DB::table('pm_execution_items')->where('pm_execution_id', $execution->id)->count());
+        $this->assertSame($staleMediaCount, $execution->media()->count());
+        $this->assertDatabaseHas('pm_executions', ['id' => $execution->id, 'status' => 'waiting_review']);
+    }
+
+    /**
+     * Memastikan part dari context occurrence lain tidak dapat ditempelkan ke media.
+     */
+    public function test_media_upload_rejects_part_from_different_occurrence_checksheet(): void
+    {
+        $execution = $this->createExecutionWithMedia('in_progress');
+        $otherChecksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-CH-OTHER',
+            'checksheet_name' => 'Checksheet Occurrence Lain',
+            'is_active' => true,
+            'created_by' => $this->admin->id,
+        ]);
+        $otherChecksheetMachine = PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $otherChecksheet->id,
+            'machine_id' => $this->machine->id,
+            'created_by' => $this->admin->id,
+        ]);
+        $otherPart = PmChecksheetPart::query()->create([
+            'pm_checksheet_machine_id' => $otherChecksheetMachine->id,
+            'part_name' => 'Part Occurrence Lain',
+            'is_active' => true,
+        ]);
+        $filesBefore = Storage::disk('public')->files('pm-execution-media');
+
+        try {
+            app(PmExecutionMediaService::class)->storeForExecution(
+                execution: $execution,
+                part: $otherPart,
+                file: UploadedFile::fake()->image('wrong-part.jpg', 640, 480),
+                operator: $this->operator,
+                note: 'Part dari occurrence lain.',
+            );
+            $this->fail('Part dari checksheet occurrence lain seharusnya ditolak.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                'Part media tidak sesuai dengan checksheet occurrence PM.',
+                collect($exception->errors())->flatten()->first(),
+            );
+        }
+
+        // Tidak boleh ada row atau file ketika ownership part gagal diverifikasi.
+        $this->assertDatabaseMissing('pm_execution_media', [
+            'pm_execution_id' => $execution->id,
+            'pm_checksheet_part_id' => $otherPart->id,
+        ]);
+        $this->assertSame($filesBefore, Storage::disk('public')->files('pm-execution-media'));
+    }
+
+    /**
+     * Test A — upload media ditolak saat lifecycle tersimpan sudah keluar dari in_progress,
+     * tanpa menyisakan baris media maupun file baru di storage.
+     */
+    public function test_stale_upload_is_rejected_without_persisting_media_row_or_file(): void
+    {
+        $staleExecution = $this->createExecutionWithMedia('in_progress', ['started_at' => now()->subMinutes(5)]);
+
+        // Submit bersamaan memindahkan status tersimpan setelah kandidat execution diambil.
+        PmExecution::query()->whereKey($staleExecution->id)->update(['status' => 'waiting_review']);
+        PmScheduleDate::query()->whereKey($this->scheduleDate->id)->update(['status' => 'waiting_review']);
+
+        $mediaCount = PmExecutionMedia::query()->where('pm_execution_id', $staleExecution->id)->count();
+        $filesBefore = Storage::disk('public')->files('pm-execution-media');
+
+        try {
+            app(PmExecutionMediaService::class)->storeForExecution(
+                execution: $staleExecution,
+                part: $this->part,
+                file: UploadedFile::fake()->image('stale-upload.jpg', 640, 480),
+                operator: $this->operator,
+                note: 'Upload saat PM sudah menunggu review.',
+            );
+            $this->fail('Upload media seharusnya ditolak untuk status waiting_review yang tersimpan.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                'Media PM hanya dapat diunggah saat PM sedang dikerjakan.',
+                collect($exception->errors())->flatten()->first(),
+            );
+        }
+
+        $this->assertSame(
+            $mediaCount,
+            PmExecutionMedia::query()->where('pm_execution_id', $staleExecution->id)->count(),
+        );
+        $this->assertSame($filesBefore, Storage::disk('public')->files('pm-execution-media'));
+        $this->assertDatabaseHas('pm_executions', ['id' => $staleExecution->id, 'status' => 'waiting_review']);
+    }
+
+    /**
      * Test F — kegagalan database selama deleteMedia memutar balik baris dan tidak membersihkan filesystem.
      * Satu-shot deleting observer pada PmExecutionMedia melempar RuntimeException di dalam transaksi.
      */
@@ -1188,49 +1321,6 @@ class PmExecutorTest extends TestCase
     }
 
     /**
-     * Recreated TASK-003 Slice-5 regression: a stale resolved candidate must
-     * be rejected before draft items or media are mutated.
-     */
-    public function test_stale_submit_is_rejected_before_any_draft_mutation(): void
-    {
-        $candidate = $this->createExecutionWithMedia('in_progress', [
-            'started_at' => now()->subMinutes(5),
-        ]);
-        $itemsBefore = PmExecutionItem::query()->where('pm_execution_id', $candidate->id)->count();
-        $mediaBefore = PmExecutionMedia::query()->where('pm_execution_id', $candidate->id)->count();
-
-        // Simulasikan perubahan lifecycle setelah resolver mengembalikan kandidat stale.
-        PmExecution::query()->whereKey($candidate->id)->update(['status' => 'waiting_review']);
-        $staleCandidate = PmExecution::query()->findOrFail($candidate->id);
-        $staleCandidate->status = 'in_progress';
-
-        $service = \Mockery::mock(PmExecutionService::class)->makePartial();
-        $service->shouldReceive('startExecutionOnly')->once()->andReturn($staleCandidate);
-        $this->app->instance(PmExecutionService::class, $service);
-
-        try {
-            $service->startOrSaveDraft(
-                request: Request::create('/'),
-                machine: $this->machine,
-                operator: $this->operator,
-                actionValues: [$this->actionStandard->id => 'OK'],
-                numberValues: [$this->numberStandard->id => '60', $this->rangeStandard->id => '120'],
-                partNotes: [],
-            );
-            $this->fail('Stale submit harus ditolak sebelum mutation draft.');
-        } catch (ValidationException $exception) {
-            $this->assertSame(
-                'PM sudah tidak dalam status aktif; submit ditolak.',
-                collect($exception->errors())->flatten()->first(),
-            );
-        }
-
-        $this->assertSame($itemsBefore, PmExecutionItem::query()->where('pm_execution_id', $candidate->id)->count());
-        $this->assertSame($mediaBefore, PmExecutionMedia::query()->where('pm_execution_id', $candidate->id)->count());
-        $this->assertDatabaseHas('pm_executions', ['id' => $candidate->id, 'status' => 'waiting_review']);
-    }
-
-    /**
      * Membuat execution dan dua file media deterministik untuk assertion lifecycle.
      */
     private function createExecutionWithMedia(string $status, array $overrides = []): PmExecution
@@ -1442,6 +1532,57 @@ class PmExecutorTest extends TestCase
         $execution->loadMissing('scheduleDate.schedule');
         $this->assertSame((int) $execution->scheduleDate->schedule->pm_checksheet_machine_id, (int) $this->part->pm_checksheet_machine_id);
         Storage::disk('public')->assertExists($media->file_path);
+    }
+
+    /**
+     * S1-18: cross-occurrence part ditolak sebelum persistence file/row.
+     */
+    public function test_s1_media_upload_route_rejects_cross_occurrence_part_without_file_or_row(): void
+    {
+        $otherChecksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-CH-ROUTE-OTHER',
+            'checksheet_name' => 'Checksheet Lain Route',
+            'is_active' => true,
+            'created_by' => $this->admin->id,
+        ]);
+        $otherChecksheetMachine = PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $otherChecksheet->id,
+            'machine_id' => $this->machine->id,
+            'created_by' => $this->admin->id,
+        ]);
+        $otherPart = PmChecksheetPart::query()->create([
+            'pm_checksheet_machine_id' => $otherChecksheetMachine->id,
+            'part_name' => 'Part Route Occurrence Lain',
+            'is_active' => true,
+        ]);
+        $filesBefore = Storage::disk('public')->files('pm-execution-media');
+
+        $this->actingAs($this->operator)->postJson("/pm/executor/{$this->machine->machine_code}/media/upload", [
+            'part_id' => $otherPart->id,
+            'part_note' => 'Part salah occurrence',
+            'media_file' => UploadedFile::fake()->image('cross.jpg', 640, 480),
+        ])->assertStatus(422)->assertJsonPath('errors.part_id.0', 'Part media tidak sesuai dengan checksheet occurrence PM.');
+
+        $this->assertSame(0, PmExecutionMedia::query()->count());
+        $this->assertSame($filesBefore, Storage::disk('public')->files('pm-execution-media'));
+    }
+
+    /**
+     * S1-19: part_id positif yang tidak ada tidak boleh berubah menjadi unassigned.
+     */
+    public function test_s1_media_upload_route_rejects_missing_part_instead_of_silently_unassigning(): void
+    {
+        $missingPartId = (int) PmChecksheetPart::query()->max('id') + 999;
+        $filesBefore = Storage::disk('public')->files('pm-execution-media');
+
+        $this->actingAs($this->operator)->postJson("/pm/executor/{$this->machine->machine_code}/media/upload", [
+            'part_id' => $missingPartId,
+            'part_note' => 'Part tidak ada',
+            'media_file' => UploadedFile::fake()->image('missing.jpg', 640, 480),
+        ])->assertStatus(422)->assertJsonPath('errors.part_id.0', 'Part media tidak sesuai dengan checksheet occurrence PM.');
+
+        $this->assertSame(0, PmExecutionMedia::query()->count());
+        $this->assertSame($filesBefore, Storage::disk('public')->files('pm-execution-media'));
     }
 
     /**
