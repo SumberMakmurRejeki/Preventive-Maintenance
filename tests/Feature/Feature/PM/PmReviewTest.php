@@ -18,11 +18,14 @@ use App\Models\PmScheduleDate;
 use App\Models\PrimeNotification;
 use App\Models\User;
 use App\Services\PM\PmReviewService;
+use DOMDocument;
+use DOMElement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PmReviewTest extends TestCase
@@ -140,6 +143,10 @@ class PmReviewTest extends TestCase
         ]);
 
         $this->execution = PmExecution::query()->create([
+            'machine_code_snapshot' => 'MC-01',
+            'machine_name_snapshot' => 'Filling Machine A',
+            'location_code_snapshot' => 'LOC-01',
+            'location_name_snapshot' => 'Line 1',
             'pm_schedule_date_id' => $this->scheduleDate->id,
             'machine_id' => $this->machine->id,
             'operator_id' => $this->operator->id,
@@ -217,6 +224,358 @@ class PmReviewTest extends TestCase
             'guest_session_id' => $guestSession->id,
             'guest_name' => $guestSession->guest_name,
         ])->get('/pm/review')->assertRedirect('/403');
+    }
+
+    /**
+     * Slice B: identitas transaksi harus tetap memakai snapshot setelah master berubah.
+     */
+    public function test_pm_review_uses_complete_transaction_snapshots_after_machine_and_location_change(): void
+    {
+        $this->execution->forceFill([
+            'machine_code_snapshot' => 'MC-01-HIST',
+            'machine_name_snapshot' => 'Filling Machine Historical',
+            'location_code_snapshot' => 'LOC-01-HIST',
+            'location_name_snapshot' => 'Line Historical',
+        ])->save();
+
+        $location = $this->machine->location;
+        $this->machine->forceFill([
+            'machine_code' => 'MC-01-LIVE',
+            'machine_name' => 'Filling Machine Live',
+        ])->save();
+        $location->forceFill([
+            'location_code' => 'LOC-01-LIVE',
+            'location_name' => 'Line Live',
+        ])->save();
+        $location->delete();
+
+        // Identitas historis dibaca dari bundle snapshot, bukan master yang berubah.
+        $this->actingAs($this->admin)
+            ->get('/pm/review')
+            ->assertOk()
+            ->assertSee('MC-01-HIST')
+            ->assertSee('Filling Machine Historical')
+            ->assertSee('Line Historical')
+            ->assertDontSee('MC-01-LIVE')
+            ->assertDontSee('Filling Machine Live')
+            ->assertDontSee('Line Live');
+
+        $this->actingAs($this->admin)
+            ->get("/pm/review/{$this->execution->id}")
+            ->assertOk()
+            ->assertSee('MC-01-HIST')
+            ->assertSee('Filling Machine Historical')
+            ->assertSee('Line Historical')
+            ->assertDontSee('MC-01-LIVE')
+            ->assertDontSee('Filling Machine Live')
+            ->assertDontSee('Line Live');
+    }
+
+    /**
+     * Slice B (penguatan bukti): partial/blank snapshot bundle harus dirender
+     * sebagai label legacy secara ATOMIK pada baris eksekusi yang sama —
+     * baik di tabel desktop maupun kartu mobile — bukan sekadar label
+     * yang muncul di suatu tempat pada halaman.
+     *
+     * @param  array{machine_code_snapshot:?string,machine_name_snapshot:?string,location_code_snapshot:?string,location_name_snapshot:?string}  $bundle
+     */
+    #[DataProvider('pmReviewPartialSnapshotBundleProvider')]
+    public function test_pm_review_renders_atomic_legacy_identity_on_affected_row_for_partial_snapshots(array $bundle, string $caseLabel): void
+    {
+        // CAUSALITY: bundle eksekusi target inilah yang dimutasi, dan baris
+        // yang diassert di bawah adalah baris untuk eksekusi yang sama.
+        $this->execution->forceFill($bundle)->save();
+
+        $response = $this->actingAs($this->admin)->get('/pm/review');
+        $response->assertOk();
+
+        $html = $response->getContent();
+        $legacy = 'Data historis tidak tersedia (legacy)';
+
+        // Desktop: baris tabel untuk eksekusi yang dimutasi.
+        $desktopRow = $this->pmReviewDesktopRow($html, $this->execution->id);
+        $this->assertNotNull(
+            $desktopRow,
+            "[{$caseLabel}] Baris desktop untuk eksekusi #{$this->execution->id} tidak ditemukan.",
+        );
+        $this->assertStringContainsString($legacy, $desktopRow->textContent ?? '', "[{$caseLabel}] Desktop Machine Code harus legacy.");
+
+        // Tiga sel identitas (kode mesin, nama mesin, lokasi) pada baris desktop
+        // harus legacy BERSAMA-SAMA; tidak boleh ada sel identitas yang memakai
+        // nilai master live ataupun nilai snapshot non-atomik.
+        $desktopIdentityCells = $this->pmReviewDesktopIdentityCells($desktopRow);
+        $this->assertCount(3, $desktopIdentityCells, "[{$caseLabel}] Baris desktop harus punya tepat 3 sel identitas (kode/nama mesin + lokasi).");
+        foreach ($desktopIdentityCells as $cell) {
+            $this->assertSame(
+                $legacy,
+                trim((string) $cell->textContent),
+                "[{$caseLabel}] Sel identitas desktop harus memakai label legacy secara atomik.",
+            );
+        }
+
+        // Mobile: kartu untuk eksekusi yang sama juga harus legacy atomik.
+        $mobileCard = $this->pmReviewMobileCard($html, $this->execution->id);
+        $this->assertNotNull(
+            $mobileCard,
+            "[{$caseLabel}] Kartu mobile untuk eksekusi #{$this->execution->id} tidak ditemukan.",
+        );
+        $this->assertSame(
+            $legacy,
+            trim((string) $this->pmReviewMobileCardCodeNode($mobileCard)?->textContent),
+            "[{$caseLabel}] Kartu mobile Kode Mesin harus legacy.",
+        );
+        $this->assertSame(
+            $legacy,
+            trim((string) $this->pmReviewMobileCardNameNode($mobileCard)?->textContent),
+            "[{$caseLabel}] Kartu mobile Nama Mesin harus legacy.",
+        );
+        $this->assertStringEndsWith(
+            $legacy,
+            trim((string) $this->pmReviewMobileCardLocationNode($mobileCard)?->textContent),
+            "[{$caseLabel}] Kartu mobile Lokasi harus legacy.",
+        );
+
+        // VISIBLE-TEXT vs DATA-ATTRIBUTE: nilai master live sengaja tetap ada
+        // pada atribut data-* untuk filtering. Buktikan bahwa live master TIDAK
+        // muncul sebagai teks identitas historis — scoped ke baris desktop dan
+        // kartu mobile — tanpa assertDontSee global yang akan gagal karena data-*.
+        foreach (['MC-01', 'Filling Machine A', 'Line 1'] as $liveMasterValue) {
+            $this->assertStringNotContainsString(
+                $liveMasterValue,
+                $this->pmReviewRowVisibleText($desktopRow),
+                "[{$caseLabel}] Teks tampilan desktop tidak boleh memuat master live '{$liveMasterValue}'.",
+            );
+            $this->assertStringNotContainsString(
+                $liveMasterValue,
+                $this->pmReviewMobileCardVisibleText($mobileCard),
+                "[{$caseLabel}] Teks tampilan mobile tidak boleh memuat master live '{$liveMasterValue}'.",
+            );
+        }
+    }
+
+    /**
+     * Slice B (penguatan bukti): detail page harus memperlakukan empty-string
+     * dan whitespace-only snapshot sebagai bundle legacy pada blok Identitas Mesin.
+     */
+    #[DataProvider('pmReviewBlankSnapshotBundleProvider')]
+    public function test_pm_review_detail_renders_legacy_identity_block_for_blank_snapshots(string $machineCodeSnapshot, string $machineNameSnapshot, string $locationCodeSnapshot, string $locationNameSnapshot, string $caseLabel): void
+    {
+        // CAUSALITY: bundle eksekusi target inilah yang dimutasi; detail page
+        // yang di-GET adalah detail eksekusi yang sama.
+        $this->execution->forceFill([
+            'machine_code_snapshot' => $machineCodeSnapshot,
+            'machine_name_snapshot' => $machineNameSnapshot,
+            'location_code_snapshot' => $locationCodeSnapshot,
+            'location_name_snapshot' => $locationNameSnapshot,
+        ])->save();
+
+        $response = $this->actingAs($this->admin)->get("/pm/review/{$this->execution->id}");
+        $response->assertOk();
+
+        // Detail merender satu blok Identitas Mesin atomik: jika bundle tidak
+        // usable, ketiga dd harus legacy BERSAMA-SAMA dan tidak boleh ada
+        // snapshot parsial yang bocor ke tampilan.
+        $identityCard = $this->pmReviewDetailIdentityCard($response->getContent());
+        $this->assertNotNull($identityCard, "[{$caseLabel}] Blok Identitas Mesin tidak ditemukan pada detail page.");
+
+        $legacyCount = substr_count($identityCard->ownerDocument->saveHTML($identityCard), 'Data historis tidak tersedia (legacy)');
+        $this->assertSame(
+            3,
+            $legacyCount,
+            "[{$caseLabel}] Ketiga identitas (Kode Mesin, Nama Mesin, Lokasi) pada blok Identitas Mesin harus legacy atomik.",
+        );
+
+        $visibleText = $this->pmReviewElementVisibleText($identityCard);
+        $this->assertStringNotContainsString('MC-01', $visibleText, "[{$caseLabel}] Tampilan identitas tidak boleh fallback ke master live (kode mesin).");
+        $this->assertStringNotContainsString('Filling Machine A', $visibleText, "[{$caseLabel}] Tampilan identitas tidak boleh fallback ke master live (nama mesin).");
+        $this->assertStringNotContainsString('Line 1', $visibleText, "[{$caseLabel}] Tampilan identitas tidak boleh fallback ke master live (lokasi).");
+    }
+
+    /**
+     * @return list<array{array{machine_code_snapshot:?string,machine_name_snapshot:?string,location_code_snapshot:?string,location_name_snapshot:?string},string}>
+     */
+    public static function pmReviewPartialSnapshotBundleProvider(): array
+    {
+        $completeBundle = [
+            'machine_code_snapshot' => 'MC-01',
+            'machine_name_snapshot' => 'Filling Machine A',
+            'location_code_snapshot' => 'LOC-01',
+            'location_name_snapshot' => 'Line 1',
+        ];
+
+        $with = static fn (array $overrides): array => array_merge($completeBundle, $overrides);
+
+        return [
+            'missing machine_code_snapshot' => [$with(['machine_code_snapshot' => null]), 'missing machine_code_snapshot (null)'],
+            'missing machine_name_snapshot' => [$with(['machine_name_snapshot' => null]), 'missing machine_name_snapshot (null)'],
+            'missing location_code_snapshot' => [$with(['location_code_snapshot' => null]), 'missing location_code_snapshot (null)'],
+            'missing location_name_snapshot' => [$with(['location_name_snapshot' => null]), 'missing location_name_snapshot (null)'],
+            '2 of 4 usable' => [$with(['machine_code_snapshot' => null, 'location_name_snapshot' => null]), '2/4 usable'],
+            '1 of 4 usable' => [$with(['machine_code_snapshot' => null, 'machine_name_snapshot' => null, 'location_code_snapshot' => null]), '1/4 usable'],
+            '0 of 4 usable' => [[
+                'machine_code_snapshot' => null,
+                'machine_name_snapshot' => null,
+                'location_code_snapshot' => null,
+                'location_name_snapshot' => null,
+            ], '0/4 usable'],
+            'empty string snapshot' => [$with([
+                'machine_code_snapshot' => '',
+                'machine_name_snapshot' => '',
+                'location_code_snapshot' => '',
+                'location_name_snapshot' => '',
+            ]), 'empty string (all four fields)'],
+            'whitespace-only snapshot' => [$with([
+                'machine_code_snapshot' => '   ',
+                'machine_name_snapshot' => '   ',
+                'location_code_snapshot' => '   ',
+                'location_name_snapshot' => '   ',
+            ]), 'whitespace-only (all four fields)'],
+        ];
+    }
+
+    /**
+     * @return list<array{string,string,string,string,string}>
+     */
+    public static function pmReviewBlankSnapshotBundleProvider(): array
+    {
+        return [
+            'empty string snapshot fields' => ['', '', '', '', 'empty string'],
+            'whitespace-only snapshot fields' => ['   ', " \t ", " \t", '  ', 'whitespace-only'],
+        ];
+    }
+
+    private function pmReviewDesktopRow(string $html, int $executionId): ?DOMElement
+    {
+        $rows = $this->pmReviewDom($html)->getElementsByTagName('tr');
+
+        foreach ($rows as $row) {
+            if (! $row instanceof DOMElement) {
+                continue;
+            }
+
+            foreach ($row->getElementsByTagName('a') as $link) {
+                if (parse_url($link->getAttribute('href'), PHP_URL_PATH) === "/pm/review/{$executionId}") {
+                    return $row;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<DOMElement>
+     */
+    private function pmReviewDesktopIdentityCells(DOMElement $row): array
+    {
+        $cells = $row->getElementsByTagName('td');
+        $identityCells = [];
+        $index = 0;
+
+        foreach ($cells as $cell) {
+            if ($index >= 2 && $index <= 4 && $cell instanceof DOMElement) {
+                $identityCells[] = $cell;
+            }
+            $index++;
+        }
+
+        return $identityCells;
+    }
+
+    private function pmReviewMobileCard(string $html, int $executionId): ?DOMElement
+    {
+        $articles = $this->pmReviewDom($html)->getElementsByTagName('article');
+
+        foreach ($articles as $article) {
+            if (! $article instanceof DOMElement) {
+                continue;
+            }
+
+            foreach ($article->getElementsByTagName('a') as $link) {
+                if (parse_url($link->getAttribute('href'), PHP_URL_PATH) === "/pm/review/{$executionId}") {
+                    return $article;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function pmReviewMobileCardCodeNode(DOMElement $card): ?DOMElement
+    {
+        foreach ($card->getElementsByTagName('p') as $node) {
+            if ($node instanceof DOMElement && $node->getAttribute('class') === 'text-[12px] font-semibold text-[#615d59]') {
+                return $node;
+            }
+        }
+
+        return null;
+    }
+
+    private function pmReviewMobileCardNameNode(DOMElement $card): ?DOMElement
+    {
+        foreach ($card->getElementsByTagName('h3') as $node) {
+            if ($node instanceof DOMElement) {
+                return $node;
+            }
+        }
+
+        return null;
+    }
+
+    private function pmReviewMobileCardLocationNode(DOMElement $card): ?DOMElement
+    {
+        foreach ($card->getElementsByTagName('p') as $node) {
+            if ($node instanceof DOMElement && str_starts_with((string) $node->textContent, 'Lokasi:')) {
+                return $node;
+            }
+        }
+
+        return null;
+    }
+
+    private function pmReviewDetailIdentityCard(string $html): ?DOMElement
+    {
+        $sections = $this->pmReviewDom($html)->getElementsByTagName('section');
+
+        foreach ($sections as $section) {
+            if (! $section instanceof DOMElement) {
+                continue;
+            }
+
+            foreach ($section->getElementsByTagName('h3') as $heading) {
+                if ($heading instanceof DOMElement && trim((string) $heading->textContent) === 'Identitas Mesin') {
+                    return $section;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function pmReviewDom(string $html): DOMDocument
+    {
+        $document = new DOMDocument;
+        libxml_use_internal_errors(true);
+        $document->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+        libxml_clear_errors();
+
+        return $document;
+    }
+
+    private function pmReviewRowVisibleText(DOMElement $row): string
+    {
+        return trim((string) $row->textContent);
+    }
+
+    private function pmReviewMobileCardVisibleText(DOMElement $card): string
+    {
+        return trim((string) $card->textContent);
+    }
+
+    private function pmReviewElementVisibleText(DOMElement $element): string
+    {
+        return trim((string) $element->textContent);
     }
 
     public function test_admin_can_view_pm_review_list_and_detail(): void

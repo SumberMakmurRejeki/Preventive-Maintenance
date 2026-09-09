@@ -115,13 +115,23 @@
                                 @php
                                     $scheduledDateRaw = optional($execution->scheduleDate?->scheduled_date)->format('Y-m-d') ?? '';
                                     $submittedDateRaw = optional($execution->submitted_at)->format('Y-m-d') ?? '';
-                                    $machineCode = $execution->machine?->machine_code ?? '-';
-                                    $machineName = $execution->machine?->machine_name ?? '-';
-                                    $locationName = $execution->machine?->location?->location_name ?? '-';
+                                    $liveMachineCode = $execution->machine?->machine_code ?? '-';
+                                    $liveMachineName = $execution->machine?->machine_name ?? '-';
+                                    $liveLocationName = $execution->machine?->location?->location_name ?? '-';
+                                    // Histori identitas harus atomik agar tidak mencampur snapshot parsial dengan master terkini.
+                                    $hasHistoricalIdentity = collect([
+                                        $execution->machine_code_snapshot,
+                                        $execution->machine_name_snapshot,
+                                        $execution->location_code_snapshot,
+                                        $execution->location_name_snapshot,
+                                    ])->every(fn ($value) => filled($value) && trim((string) $value) !== '');
+                                    $machineCode = $hasHistoricalIdentity ? $execution->machine_code_snapshot : 'Data historis tidak tersedia (legacy)';
+                                    $machineName = $hasHistoricalIdentity ? $execution->machine_name_snapshot : 'Data historis tidak tersedia (legacy)';
+                                    $locationName = $hasHistoricalIdentity ? $execution->location_name_snapshot : 'Data historis tidak tersedia (legacy)';
                                     $operatorName = $execution->operator_name_snapshot ?? '-';
                                     $warningCount = (int) $execution->warning_count;
                                 @endphp
-                                <tr class="border-b border-[rgba(0,0,0,0.08)] text-[14px] text-[rgba(0,0,0,0.95)] transition hover:bg-[#f6f5f4]" data-pm-review-row data-code="{{ strtolower($machineCode) }}" data-name="{{ strtolower($machineName) }}" data-location="{{ strtolower($locationName) }}" data-operator="{{ strtolower($operatorName) }}" data-status="{{ $execution->status }}" data-scheduled-date="{{ $scheduledDateRaw }}" data-submitted-date="{{ $submittedDateRaw }}">
+                                <tr class="border-b border-[rgba(0,0,0,0.08)] text-[14px] text-[rgba(0,0,0,0.95)] transition hover:bg-[#f6f5f4]" data-pm-review-row data-code="{{ strtolower($liveMachineCode) }}" data-name="{{ strtolower($liveMachineName) }}" data-location="{{ strtolower($liveLocationName) }}" data-operator="{{ strtolower($operatorName) }}" data-status="{{ $execution->status }}" data-scheduled-date="{{ $scheduledDateRaw }}" data-submitted-date="{{ $submittedDateRaw }}">
                                     <td class="text-left">{{ $executions->firstItem() + $loop->index }}</td>
                                     <td class="text-left">{{ $scheduledDateRaw !== '' ? \Carbon\Carbon::parse($scheduledDateRaw)->translatedFormat('d M Y') : '-' }}</td>
                                     <td class="text-left">{{ $machineCode }}</td>
@@ -156,13 +166,18 @@
                         @php
                             $scheduledDateRaw = optional($execution->scheduleDate?->scheduled_date)->format('Y-m-d') ?? '';
                             $submittedDateRaw = optional($execution->submitted_at)->format('Y-m-d') ?? '';
-                            $machineCode = $execution->machine?->machine_code ?? '-';
-                            $machineName = $execution->machine?->machine_name ?? '-';
-                            $locationName = $execution->machine?->location?->location_name ?? '-';
+                            $liveMachineCode = $execution->machine?->machine_code ?? '-';
+                            $liveMachineName = $execution->machine?->machine_name ?? '-';
+                            $liveLocationName = $execution->machine?->location?->location_name ?? '-';
+                            // Gunakan bundle yang sama pada mobile agar keputusan histori konsisten dengan tabel desktop.
+                            $hasHistoricalIdentity = collect([$execution->machine_code_snapshot, $execution->machine_name_snapshot, $execution->location_code_snapshot, $execution->location_name_snapshot])->every(fn ($value) => filled($value) && trim((string) $value) !== '');
+                            $machineCode = $hasHistoricalIdentity ? $execution->machine_code_snapshot : 'Data historis tidak tersedia (legacy)';
+                            $machineName = $hasHistoricalIdentity ? $execution->machine_name_snapshot : 'Data historis tidak tersedia (legacy)';
+                            $locationName = $hasHistoricalIdentity ? $execution->location_name_snapshot : 'Data historis tidak tersedia (legacy)';
                             $operatorName = $execution->operator_name_snapshot ?? '-';
                             $warningCount = (int) $execution->warning_count;
                         @endphp
-                        <article class="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-white p-[14px]" data-pm-review-row data-code="{{ strtolower($machineCode) }}" data-name="{{ strtolower($machineName) }}" data-location="{{ strtolower($locationName) }}" data-operator="{{ strtolower($operatorName) }}" data-status="{{ $execution->status }}" data-scheduled-date="{{ $scheduledDateRaw }}" data-submitted-date="{{ $submittedDateRaw }}">
+                        <article class="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-white p-[14px]" data-pm-review-row data-code="{{ strtolower($liveMachineCode) }}" data-name="{{ strtolower($liveMachineName) }}" data-location="{{ strtolower($liveLocationName) }}" data-operator="{{ strtolower($operatorName) }}" data-status="{{ $execution->status }}" data-scheduled-date="{{ $scheduledDateRaw }}" data-submitted-date="{{ $submittedDateRaw }}">
                             <div class="mb-2 flex items-center justify-between gap-3">
                                 <p class="text-[12px] font-semibold text-[#615d59]">{{ $machineCode }}</p>
                                 <span class="inline-flex h-[25px] items-center whitespace-nowrap rounded-[9999px] border px-[11px] text-[12px] font-semibold leading-[1.2] tracking-[0.125px] {{ $execution->status === 'approved' ? 'border-[#abefc6] bg-[#ecfdf3] text-[#067647]' : 'border-[#fed7aa] bg-[#fff7ed] text-[#9a3412]' }}">{{ $execution->status === 'approved' ? 'Approved' : 'Menunggu Review' }}</span>

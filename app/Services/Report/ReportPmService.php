@@ -40,6 +40,9 @@ class ReportPmService
      */
     protected function baseQuery(array $filters): Builder
     {
+        // Histori identitas harus atomik agar transaksi tidak tercampur dengan master terkini.
+        $usableSnapshotBundle = "NULLIF(TRIM(pe.machine_code_snapshot), '') IS NOT NULL AND NULLIF(TRIM(pe.machine_name_snapshot), '') IS NOT NULL AND NULLIF(TRIM(pe.location_code_snapshot), '') IS NOT NULL AND NULLIF(TRIM(pe.location_name_snapshot), '') IS NOT NULL";
+
         return DB::table('pm_schedule_dates as psd')
             ->join('machines as m', 'm.id', '=', 'psd.machine_id')
             ->leftJoin('locations as l', 'l.id', '=', 'm.location_id')
@@ -89,9 +92,9 @@ class ReportPmService
                 'psd.id as schedule_date_id',
                 'psd.scheduled_date',
                 'psd.status as schedule_status',
-                'm.machine_code',
-                'm.machine_name',
-                'l.location_name',
+                DB::raw("CASE WHEN pe.id IS NULL THEN m.machine_code WHEN {$usableSnapshotBundle} THEN pe.machine_code_snapshot ELSE 'Data historis tidak tersedia (legacy)' END as machine_code"),
+                DB::raw("CASE WHEN pe.id IS NULL THEN m.machine_name WHEN {$usableSnapshotBundle} THEN pe.machine_name_snapshot ELSE 'Data historis tidak tersedia (legacy)' END as machine_name"),
+                DB::raw("CASE WHEN pe.id IS NULL THEN l.location_name WHEN {$usableSnapshotBundle} THEN pe.location_name_snapshot ELSE 'Data historis tidak tersedia (legacy)' END as location_name"),
                 'pe.id as execution_id',
                 'pe.status as execution_status',
                 'pe.operator_name_snapshot',

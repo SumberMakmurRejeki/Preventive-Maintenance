@@ -62,12 +62,17 @@
                     <div class="flex justify-between"><dt>Approved At</dt><dd class="font-semibold">{{ optional($execution->approved_at)->format('Y-m-d H:i') ?? '-' }}</dd></div>
                 </dl>
             </x-ui.card>
+            @php
+                // Bundle identitas dibaca atomik agar histori tidak tercampur dengan master terkini.
+                $hasHistoricalIdentity = collect([$execution->machine_code_snapshot, $execution->machine_name_snapshot, $execution->location_code_snapshot, $execution->location_name_snapshot])->every(fn ($value) => filled($value));
+                $historicalUnavailable = 'Data historis tidak tersedia (legacy)';
+            @endphp
             <x-ui.card>
                 <h3 class="text-xs font-bold uppercase tracking-[0.15em] text-[var(--color-prime-muted)]">Identitas Mesin</h3>
                 <dl class="mt-3 space-y-2 text-sm">
-                    <div class="flex justify-between"><dt>Kode Mesin</dt><dd class="font-semibold">{{ $execution->machine?->machine_code ?? '-' }}</dd></div>
-                    <div class="flex justify-between"><dt>Nama Mesin</dt><dd class="font-semibold">{{ $execution->machine?->machine_name ?? '-' }}</dd></div>
-                    <div class="flex justify-between"><dt>Lokasi</dt><dd class="font-semibold">{{ $execution->machine?->location?->location_name ?? '-' }}</dd></div>
+                    <div class="flex justify-between"><dt>Kode Mesin</dt><dd class="font-semibold">{{ $hasHistoricalIdentity ? $execution->machine_code_snapshot : $historicalUnavailable }}</dd></div>
+                    <div class="flex justify-between"><dt>Nama Mesin</dt><dd class="font-semibold">{{ $hasHistoricalIdentity ? $execution->machine_name_snapshot : $historicalUnavailable }}</dd></div>
+                    <div class="flex justify-between"><dt>Lokasi</dt><dd class="font-semibold">{{ $hasHistoricalIdentity ? $execution->location_name_snapshot : $historicalUnavailable }}</dd></div>
                     <div class="flex justify-between"><dt>Total Warning</dt><dd class="font-semibold {{ $warningCount > 0 ? 'text-[var(--color-prime-danger)]' : 'text-[var(--color-prime-success)]' }}">{{ $warningCount > 0 ? $warningCount . ' Temuan' : '0 (Aman)' }}</dd></div>
                 </dl>
             </x-ui.card>

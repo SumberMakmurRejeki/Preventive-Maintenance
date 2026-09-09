@@ -110,6 +110,259 @@ class ReportPmTest extends TestCase
         );
     }
 
+    /**
+     * Slice B: Review dan Report harus memperlakukan bundle snapshot secara atomik.
+     * Satu nilai yang hilang atau kosong tidak boleh menghasilkan identitas parsial.
+     */
+    public function test_review_and_report_require_four_usable_snapshot_values(): void
+    {
+        $service = app(ReportPmService::class);
+        $executionId = (int) $service->exportRows([])->firstWhere('execution_id', '!=', null)->execution_id;
+        $legacyLabel = 'Data historis tidak tersedia (legacy)';
+        $completeSnapshot = [
+            'machine_code_snapshot' => 'M-A-HIST',
+            'machine_name_snapshot' => 'Mesin A Historis',
+            'location_code_snapshot' => 'LOC-A-HIST',
+            'location_name_snapshot' => 'Line Historis',
+        ];
+        $cases = [
+            'missing_machine_code' => ['machine_code_snapshot' => null],
+            'missing_machine_name' => ['machine_name_snapshot' => null],
+            'missing_location_code' => ['location_code_snapshot' => null],
+            'missing_location_name' => ['location_name_snapshot' => null],
+            'two_of_four_usable' => ['machine_name_snapshot' => null, 'location_name_snapshot' => null],
+            'one_of_four_usable' => ['machine_name_snapshot' => null, 'location_code_snapshot' => null, 'location_name_snapshot' => null],
+            'zero_of_four_usable' => array_fill_keys(array_keys($completeSnapshot), null),
+            'empty_string' => ['machine_code_snapshot' => ''],
+            'whitespace_only' => ['machine_code_snapshot' => '   '],
+        ];
+
+        foreach ($cases as $case => $overrides) {
+            PmExecution::query()->whereKey($executionId)->update(array_merge($completeSnapshot, $overrides));
+
+            $this->actingAs($this->admin)
+                ->get('/pm/review')
+                ->assertOk()
+                ->assertSee($legacyLabel);
+
+            $row = $service->exportRows([])->firstWhere('execution_id', $executionId);
+            $this->assertNotNull($row, $case);
+            $this->assertSame($legacyLabel, $row->machine_code, $case);
+            $this->assertSame($legacyLabel, $row->machine_name, $case);
+            $this->assertSame($legacyLabel, $row->location_name, $case);
+
+            $this->actingAs($this->admin)
+                ->get('/report/pm')
+                ->assertOk()
+                ->assertSee($legacyLabel);
+        }
+    }
+
+    /**
+     * Slice B: identitas Report tetap memakai snapshot ketika Location master dihapus soft delete.
+     */
+    public function test_report_pm_snapshot_survives_current_location_soft_delete_for_all_output_surfaces(): void
+    {
+        $service = app(ReportPmService::class);
+        $rowBefore = $service->exportRows([])->firstWhere('machine_code', 'M-A-01');
+        $this->assertNotNull($rowBefore);
+
+        $location = $this->machineA->location;
+        $this->machineA->forceFill(['machine_code' => 'M-A-LIVE', 'machine_name' => 'Mesin A Live'])->save();
+        $location->forceFill(['location_name' => 'Line Live'])->save();
+        $location->delete();
+
+        $row = $service->exportRows([])->firstWhere('execution_id', $rowBefore->execution_id);
+        $this->assertNotNull($row);
+        $this->assertSame('M-A-01', $row->machine_code);
+        $this->assertSame('Mesin A', $row->machine_name);
+        $this->assertSame('Line Produksi A', $row->location_name);
+
+        $this->actingAs($this->admin)
+            ->get('/report/pm')
+            ->assertOk()
+            ->assertSee('<td class="text-left font-semibold">M-A-01</td>', escape: false)
+            ->assertSee('<td class="text-left">Line Produksi A</td>', escape: false)
+            ->assertDontSee('M-A-LIVE')
+            ->assertDontSee('Line Live');
+
+        $mapped = (new ReportPmExport(collect([$row]), $service))->map($row);
+        $this->assertContains('M-A-01', $mapped);
+        $this->assertContains('Mesin A', $mapped);
+        $this->assertContains('Line Produksi A', $mapped);
+        $this->assertNotContains('M-A-LIVE', $mapped);
+        $this->assertNotContains('Line Live', $mapped);
+
+        $view = $this->view('pages.report.pm.pdf', [
+            'rows' => collect([$row]),
+            'reportPmService' => $service,
+            'filters' => [],
+            'summary' => ['total' => 1],
+            'printedBy' => $this->admin->name,
+        ]);
+        $view->assertSee('M-A-01')
+            ->assertSee('Mesin A')
+            ->assertSee('Line Produksi A')
+            ->assertDontSee('M-A-LIVE')
+            ->assertDontSee('Line Live');
+    }
+
+    public function test_report_pm_export_rows_use_transaction_snapshots_after_master_changes(): void
+    {
+        $rowBefore = app(ReportPmService::class)->exportRows([])->firstWhere('machine_code', 'M-A-01');
+        $this->assertNotNull($rowBefore);
+
+        $location = $this->machineA->location;
+        $this->machineA->forceFill(['machine_code' => 'M-A-LIVE', 'machine_name' => 'Mesin A Live'])->save();
+        $location->forceFill(['location_name' => 'Line Live'])->save();
+
+        $row = app(ReportPmService::class)->exportRows([])->firstWhere('execution_id', $rowBefore->execution_id);
+        $this->assertNotNull($row);
+        $this->assertSame('M-A-01', $row->machine_code);
+        $this->assertSame('Mesin A', $row->machine_name);
+        $this->assertSame('Line Produksi A', $row->location_name);
+    }
+
+    public function test_report_pm_incomplete_execution_snapshot_is_explicitly_legacy_unavailable(): void
+    {
+        $executionId = (int) app(ReportPmService::class)->exportRows([])->firstWhere('machine_code', 'M-A-01')->execution_id;
+        PmExecution::query()->whereKey($executionId)->update([
+            'machine_code_snapshot' => null,
+            'machine_name_snapshot' => null,
+            'location_code_snapshot' => null,
+            'location_name_snapshot' => null,
+        ]);
+
+        $row = app(ReportPmService::class)->exportRows([])->firstWhere('execution_id', $executionId);
+        $this->assertNotNull($row);
+        $this->assertSame('Data historis tidak tersedia (legacy)', $row->machine_code);
+        $this->assertSame('Data historis tidak tersedia (legacy)', $row->machine_name);
+        $this->assertSame('Data historis tidak tersedia (legacy)', $row->location_name);
+    }
+
+    public function test_report_pm_html_uses_transaction_snapshots_after_master_changes(): void
+    {
+        $executionId = (int) app(ReportPmService::class)->exportRows([])->firstWhere('machine_code', 'M-A-01')->execution_id;
+
+        $location = $this->machineA->location;
+        $this->machineA->forceFill(['machine_code' => 'M-A-LIVE', 'machine_name' => 'Mesin A Live'])->save();
+        $location->forceFill(['location_name' => 'Line Live'])->save();
+
+        // Filter controls intentionally retain live master values for filtering.
+        $this->actingAs($this->admin)
+            ->get('/report/pm')
+            ->assertOk()
+            ->assertSee('M-A-01')
+            ->assertSee('Mesin A')
+            ->assertSee('Line Produksi A')
+            ->assertDontSee('M-A-LIVE')
+            ->assertDontSee('Mesin A Live');
+
+        $this->assertNotNull($executionId);
+    }
+
+    public function test_report_pm_excel_map_uses_transaction_snapshots_after_master_changes(): void
+    {
+        $service = app(ReportPmService::class);
+        $rowBefore = $service->exportRows([])->firstWhere('machine_code', 'M-A-01');
+
+        $location = $this->machineA->location;
+        $this->machineA->forceFill(['machine_code' => 'M-A-LIVE', 'machine_name' => 'Mesin A Live'])->save();
+        $location->forceFill(['location_name' => 'Line Live'])->save();
+
+        $row = $service->exportRows([])->firstWhere('execution_id', $rowBefore->execution_id);
+        $this->assertNotNull($row);
+
+        $mapped = (new ReportPmExport(collect([$row]), $service))->map($row);
+
+        $this->assertContains('M-A-01', $mapped);
+        $this->assertContains('Mesin A', $mapped);
+        $this->assertContains('Line Produksi A', $mapped);
+        $this->assertNotContains('M-A-LIVE', $mapped);
+        $this->assertNotContains('Mesin A Live', $mapped);
+        $this->assertNotContains('Line Live', $mapped);
+    }
+
+    public function test_report_pm_pdf_uses_transaction_snapshots_after_master_changes(): void
+    {
+        $service = app(ReportPmService::class);
+        $rowBefore = $service->exportRows([])->firstWhere('machine_code', 'M-A-01');
+
+        $location = $this->machineA->location;
+        $this->machineA->forceFill(['machine_code' => 'M-A-LIVE', 'machine_name' => 'Mesin A Live'])->save();
+        $location->forceFill(['location_name' => 'Line Live'])->save();
+
+        $row = $service->exportRows([])->firstWhere('execution_id', $rowBefore->execution_id);
+        $this->assertNotNull($row);
+
+        $view = $this->view('pages.report.pm.pdf', [
+            'rows' => collect([$row]),
+            'reportPmService' => $service,
+            'filters' => [],
+            'summary' => ['total' => 1],
+            'printedBy' => $this->admin->name,
+        ]);
+
+        $view->assertSee('M-A-01');
+        $view->assertSee('Mesin A');
+        $view->assertSee('Line Produksi A');
+        $view->assertDontSee('M-A-LIVE');
+        $view->assertDontSee('Mesin A Live');
+        $view->assertDontSee('Line Live');
+    }
+
+    public function test_report_pm_legacy_snapshot_label_renders_in_html_excel_and_pdf(): void
+    {
+        $service = app(ReportPmService::class);
+        $executionId = (int) $service->exportRows([])->firstWhere('machine_code', 'M-A-01')->execution_id;
+        PmExecution::query()->whereKey($executionId)->update([
+            'machine_code_snapshot' => null,
+            'machine_name_snapshot' => null,
+            'location_code_snapshot' => null,
+            'location_name_snapshot' => null,
+        ]);
+
+        $row = $service->exportRows([])->firstWhere('execution_id', $executionId);
+        $this->assertNotNull($row);
+
+        $legacyLabel = 'Data historis tidak tersedia (legacy)';
+
+        // Filter controls intentionally retain live master values for filtering.
+        $this->actingAs($this->admin)
+            ->get('/report/pm')
+            ->assertOk()
+            ->assertSee($legacyLabel)
+            ->assertDontSee('Mesin A');
+
+        // Excel mapping
+        $mapped = (new ReportPmExport(collect([$row]), $service))->map($row);
+        $this->assertContains($legacyLabel, $mapped);
+        $this->assertNotContains('Mesin A', $mapped);
+        $this->assertNotContains('Line Produksi A', $mapped);
+
+        // PDF Blade
+        $view = $this->view('pages.report.pm.pdf', [
+            'rows' => collect([$row]),
+            'reportPmService' => $service,
+            'filters' => [],
+            'summary' => ['total' => 1],
+            'printedBy' => $this->admin->name,
+        ]);
+        $view->assertSee($legacyLabel);
+        $view->assertDontSee('Mesin A');
+        $view->assertDontSee('Line Produksi A');
+    }
+
+    public function test_report_pm_schedule_only_rows_keep_current_master_identity(): void
+    {
+        $row = app(ReportPmService::class)->exportRows([])->firstWhere('execution_id', null);
+
+        $this->assertNotNull($row);
+        $this->assertSame('M-B-01', $row->machine_code);
+        $this->assertSame('Mesin B', $row->machine_name);
+        $this->assertSame('Line Produksi B', $row->location_name);
+    }
+
     public function test_admin_can_access_report_pm_page(): void
     {
         $response = $this->actingAs($this->admin)->get('/report/pm');
@@ -372,6 +625,11 @@ class ReportPmTest extends TestCase
         ]);
 
         $execution = PmExecution::query()->create([
+            // Slice A: snapshot identitas transaksi.
+            'machine_code_snapshot' => $machine->machine_code,
+            'machine_name_snapshot' => $machine->machine_name,
+            'location_code_snapshot' => Location::query()->findOrFail($machine->location_id)->location_code,
+            'location_name_snapshot' => Location::query()->findOrFail($machine->location_id)->location_name,
             'pm_schedule_date_id' => $scheduleDate->id,
             'machine_id' => $machine->id,
             'operator_id' => $this->operator->id,
