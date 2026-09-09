@@ -10,14 +10,14 @@ session:
 handoff:
   next_skill: null
   story_id: null
-  status: "Phase 2 ACTIVE — ADR-007 IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED — Slice A published 8f47e05 — Slice B source c531d5c — next roadmap activation requires manager decision"
+  status: "Phase 2 ACTIVE / NEAR CLOSURE — PM Review finalized-record concurrency safety; ADR-007 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED"
   updated_at: "2026-09-09"
-  next_action: "Determine the next roadmap item from the declared dependency order; manager decision required"
-  task_status: "Phase 2 ACTIVE — ADR-007 CLOSED / PASS / MANAGER ACCEPTED — Slice B implementation and verification complete"
-  adr_status: "ADR-007 IMPLEMENTED / VERIFIED / CLOSED — Slice A and Slice B PASS / MANAGER ACCEPTED"
-  planning_document: "Docs/decisions/ADR-007-transaction-snapshot-strategy.md"
+  next_action: "Manager-authorized bounded plan/proof for PM Review update-vs-approve concurrency safety"
+  task_status: "Phase 2 ACTIVE / NEAR CLOSURE — current work is PM Review finalized-record concurrency safety"
+  adr_status: "ADR-007 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED"
+  planning_document: null
   correction_report: null
-  blocker: "Next roadmap activation requires manager decision"
+  blocker: "Finalized-record update-vs-approve concurrency proof remains before Phase 2 closure"
 
 planning:
   risk: null
@@ -29,16 +29,16 @@ planning:
 
 git:
   branch: develop
-  head: "4eb9acb"
+  head: "5c2977fb18b081e80790eb92d0f42b8da06d996e"
   dirty_checkpoint_expected: true
   staged_file_count: 0
   staged_checkpoint_sha256: null
 
 verification:
-  status: "TASK-004 / ADR-004 CLOSED — IMPLEMENTED + VERIFIED — SLICES 1, 2, AND 3 COMPLETE — R1/R2/R3 PASS — SCOPED REGRESSION PASS (90 tests / 413 assertions / 0 failures / 0 errors) — INDEPENDENT FINAL REVIEW PASS WITH NON-BLOCKING NOTES — BLOCKING FINDINGS NONE — MANAGER ACCEPTED; TASK-005 CLOSED / PASS — MANAGER ACCEPTED"
-  application_tests: "SCOPED REGRESSION PASS — 90 tests / 413 assertions / 0 failures / 0 errors"
-  database_mutation: "TEST DB ONLY — APPLY/ROLLBACK/REAPPLY/R3 PASS; FIXTURE CLEANED; RESIDUALS 0; MAIN/LOCAL DB NOT MUTATED"
+  status: "PENDING — PM Review update-vs-approve concurrency proof has not yet been executed."
+  application_tests: "NOT RUN FOR CURRENT WORK."
+  database_mutation: "NONE FOR CURRENT WORK."
   canonical_unique_index_present: true
   r3: PASS
   documentation_validation: PASS
-  remaining_risks: "TASK-005 fake-storage test-infrastructure issue CLOSED / PASS (shared-root mechanism proven; tokenized isolation effective); exact historical named-test causality remains NOT CONCLUSIVELY PROVEN; media file write remains inside DB transaction (CONSIDER); service files exceed 300-line preference"
+  remaining_risks: "Current blocker is finalized-record update-vs-approve concurrency safety. Historical TASK-004/TASK-005 verification remains in its owning task and session documentation."

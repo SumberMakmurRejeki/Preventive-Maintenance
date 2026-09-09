@@ -4,10 +4,14 @@
 
 **Roadmap Phase:** Phase 2 — Historical Truth & Transaction Snapshot Foundation
 **Authoritative Roadmap:** `Docs/roadmap.md`
-**Current Task:** ADR-007 — Transaction Snapshot Strategy (**CLOSED / PASS / MANAGER ACCEPTED**)
-**Planning Document:** `Docs/decisions/ADR-007-transaction-snapshot-strategy.md`
-**Previous Task:** ADR-007 Slice B — Historical Read-Side Consistency (**CLOSED / PASS / MANAGER ACCEPTED**)
-**Status:** Phase 2 **ACTIVE**; ADR-007 **IMPLEMENTED / VERIFIED / CLOSED**; next roadmap activation requires manager decision
+**Current Work:** PM Review finalized-record concurrency safety
+**Status:** Phase 2 **ACTIVE / NEAR CLOSURE**
+**Last Closed Major Item:** ADR-007 — Transaction Snapshot Strategy (**CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**)
+**Current Published Checkpoint:** `5c2977fb18b081e80790eb92d0f42b8da06d996e`
+**Next Action:** Manager-authorized bounded plan/proof for PM Review update-vs-approve concurrency safety.
+**After:** Phase 2 manager closure if the proof passes; then ADR-009 no-historical-backlog remediation.
+
+ADR-007 is not reopened. TASK-002 remains closed. Phase 3 is not started and is not activated by this handoff.
 
 ## Current ADR Assessment
 
@@ -56,23 +60,23 @@ R4 NULL/manual control tidak berlaku karena current FK adalah NOT NULL.
 
 ## Current Handoff
 
-**Next Action:** Determine the next roadmap item from the declared dependency order; do not invent a new phase.
+**Current Work:** PM Review finalized-record concurrency safety.
 
-**Implementation status:** ADR-007 Slice A and Slice B are implemented, verified, and manager accepted. Slice B preserves complete transaction identity bundles for PM Review and PM Report while keeping current-master filtering context available.
+**Implementation status:** ADR-007 Slice A and Slice B are implemented, verified, manager accepted, and published. Phase 2 remains active because finalized-record update-vs-approve concurrency safety is still unproven.
 
-**Slice-B source checkpoint:** Commit `c531d5c` (`feat(pm): preserve historical identity in PM readers`). Accepted local UAT bootstrap tooling is separate commit `5ccb5f8`.
+**Next Action:** Manager-authorized bounded plan/proof for PM Review update-vs-approve concurrency safety.
 
-**Canonical roadmap synchronization:** `Docs/roadmap.md` remains authoritative. Phase 2 remains active because the roadmap does not declare a next authorized implementation automatically.
+**Canonical roadmap synchronization:** `Docs/roadmap.md` remains authoritative. ADR-007 is not reopened; TASK-002 remains closed; ADR-009 is next after Phase 2 and is not current.
 
 ### Current closure checkpoint
 
-ADR-007: **IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED — 2026-09-09**.
+ADR-007: **IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED — 2026-09-09**.
 
 Historical proof used mutable Machine name and Location name changes. `machine_code` rename proof is not claimed because it is immutable under the current PRIME contract.
 
 ### Current Git checkpoint
 
-Current session commits: `c531d5c`, `5ccb5f8`, and `4eb9acb`; staged files `0` immediately after each commit. Ambient work remains intentionally dirty and uncommitted.
+Published tracking checkpoint: `5c2977fb18b081e80790eb92d0f42b8da06d996e`; staged files `0`; ambient work remains intentionally dirty and uncommitted.
 
 ### Historical TASK-004 verification sections
 
@@ -139,8 +143,8 @@ The 2026-08-30 partial-verification note is superseded by the 2026-08-31 correct
 - Pint: **PASS**; scoped `git diff --check`: **PASS**.
 - Browser: **NOT REQUIRED**; source and HTTP feature tests prove the Slice 2 contract.
 - RCA evidence: `specs/bugs/BUG-TASK-003-SLICE-2.md`; verification artifact: `specs/verifications/AUDIT-TASK-003-SLICE-2.md`.
-- Historical Slice 2 checkpoint: next action was preparing Slice 3; current Slice 3 status is recorded above.
-- TASK-003 overall dan ADR-003 remain **OPEN**; Slice 4 remains **NOT STARTED**.
+- Historical Slice 2 checkpoint: next action was preparing Slice 3; this is historical evidence and current Slice 3 status is recorded above.
+- TASK-003 overall and ADR-003 were historically OPEN at this checkpoint; current status is CLOSED / PASS and must be read from the manager tracker.
 
 ### TASK-003 Slice 3 Data-Safety Design Checkpoint
 
@@ -184,11 +188,8 @@ The 2026-08-30 partial-verification note is superseded by the 2026-08-31 correct
     - Scoped Pint: **PASS**.
     - Scoped git diff --check: **PASS**.
     - Persisted R1/R2/R3 evidence remains valid; re-execution not required.
-  - Slice 3: **CLOSED / PASS — INDEPENDENT REVIEW VERIFIED**.
-  - TASK-003: **OPEN**.
-  - ADR-003: **OPEN**.
-  - Slice 4: **NOT STARTED**.
-  - Next action: **PREPARE TASK-003 SLICE 4 — PM CHECKSHEET HISTORICAL DELETE PROTECTION — DO NOT IMPLEMENT YET**.
+  - Historical checkpoint only: TASK-003 and ADR-003 were then OPEN; they are now CLOSED / PASS.
+  - Slice 4 was then NOT STARTED; do not treat this historical next action as current authorization.
 
 TASK-002 Slice 2 — Schedule Update Safety: **CORRECTED AFTER INDEPENDENT REVIEW — Automated verification PASS**.
 

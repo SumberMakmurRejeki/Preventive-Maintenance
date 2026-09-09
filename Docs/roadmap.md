@@ -1,135 +1,197 @@
-# Master Roadmap PRIME v1
+# PRIME Roadmap — Current Manager View
 
 **Project:** PRIME — Preventive Maintenance System
-**Date:** 2026-09-03
-**Owner:** User + ChatGPT Manager
-**Repository Executor / Technical Auditor:** OMP
-**Status:** AUTHORITATIVE MASTER ROADMAP
-**Management approval:** APPROVED
-**Technical validation:** PASS WITH NON-BLOCKING NOTES
-**Implementation authorization:** NONE BY ROADMAP ALONE — roadmap ini sendiri tidak mengotorisasi implementasi apa pun
 **Canonical document:** `Docs/roadmap.md`
-**Current operational position:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — ADR-007 CLOSED / PASS / MANAGER ACCEPTED (Slice A published 8f47e05; Slice B committed c531d5c); next roadmap activation requires manager decision
+**Last synchronized:** 2026-09-09
+**Published checkpoint:** `develop @ 5c2977fb18b081e80790eb92d0f42b8da06d996e`
+**Authorization:** Roadmap tracking does not authorize implementation, commits, or deployment.
 
-**Approved management source:** `Docs/work/MASTER-ROADMAP-PRIME-v1-FINAL.md`
-**Repository validation evidence:** `Docs/work/session-reports/2026-09-03-PRIME-master-roadmap-v1-final-repository-validation.md`
+## Posisi Saat Ini
 
-# 0. PRIME Live Progress Tracker
+**Phase 2 — Historical Truth & Transaction Snapshot Foundation**
 
-| Field                        | Current value                                                |
-| ---------------------------- | ------------------------------------------------------------ |
-| Last Updated                 | 2026-09-09                                                   |
-| Current Phase                | Phase 2 — Historical Truth & Transaction Snapshot Foundation |
-| Current Task                 | ADR-007 — Transaction Snapshot Strategy — CLOSED / PASS / MANAGER ACCEPTED — 2026-09-09 |
-| Last Closed Item             | ADR-007 Slice B — Historical Read-Side Consistency — CLOSED / PASS / MANAGER ACCEPTED — 2026-09-09 |
-| Current Gate                 | Next roadmap activation (requires manager decision)          |
-| Next Gate                    | Manager decision on next roadmap item from declared dependency order |
+**CURRENT:**
+- PM Review finalized-record concurrency safety — prove or remediate update-vs-approve so finalized-record mutation fails closed when approval overlaps.
 
-| V1 Status                    | NOT READY                                                    |
-| Implementation Authorization | NONE FOR COMMIT EXECUTION UNTIL USER + CHATGPT APPROVAL      |
+**NEXT:**
+- Manager-authorized bounded plan/proof for PM Review update-vs-approve concurrency.
+- Phase 2 exit-gate verification.
+- Manager closure of Phase 2 if the remaining proof passes.
 
-## Phase Overview Tracker
+**AFTER:**
+- ADR-009 no-historical-backlog remediation.
+- Phase 3 activation only after explicit manager authorization.
 
-| Phase | Name | Progress Status | Current / Last Evidence | Next Gate | Updated |
-| ----- | ---- | --------------- | ------------------------ | --------- | ------- |
-| 0 | Current Work Closure & Development Baseline | CLOSED | TASK-004 / ADR-004 CLOSED; TASK-005 CLOSED; R1/R2/R3 PASS; regression PASS; independent review PASS; manager acceptance complete | Phase 0 exit gate PASS | 2026-09-05 |
-| 1 | Repository & Schema Integration Baseline | CLOSED / EXIT GATE PASS | C1–C10; PR1–PR3; FR1–FR2 complete / accepted; manager acceptance complete | Phase 2 activation for analysis-planning | 2026-09-07 |
-| 2 | Historical Truth & Transaction Snapshot Foundation | ACTIVE | ADR-007 CLOSED / PASS / MANAGER ACCEPTED (2026-09-09); Slice A published checkpoint 8f47e05; Slice B source commit c531d5c | Manager decision on next roadmap item | 2026-09-09 |
-| 3 | PM Lifecycle & Planning Completion | NOT STARTED | — | Activate after Phase 2 closure and authorization | 2026-09-04 |
-| 4 | PM Configuration Integrity & Stable Option Identity | NOT STARTED | — | Activate after Phase 3 closure and authorization | 2026-09-04 |
-| 5 | Historical PM | NOT STARTED | — | Activate after Phase 4 closure and authorization | 2026-09-04 |
-| 6 | Breakdown Domain Hardening | NOT STARTED | — | Activate after Phase 5 closure and authorization | 2026-09-04 |
-| 7 | Cross-Domain Transaction Reliability | NOT STARTED | — | Activate after Phase 6 closure and authorization | 2026-09-04 |
-| 8 | Authorization, Retention & Governance | NOT STARTED | — | Activate after Phase 7 closure and authorization | 2026-09-04 |
-| 9 | Read-Side & Reporting Alignment | NOT STARTED | — | Activate after Phase 8 closure and authorization | 2026-09-04 |
-| 10 | Performance, Operations & Production Operating Contract | NOT STARTED | — | Activate after Phase 9 closure and authorization | 2026-09-04 |
-| 11 | Test & Engineering Quality | NOT STARTED | — | Activate after Phase 10 closure and authorization | 2026-09-04 |
-| 12 | Documentation & Lightweight Traceability | NOT STARTED | — | Activate after Phase 11 closure and authorization | 2026-09-04 |
-| 13 | V1 Hardening | NOT STARTED | — | Activate after Phase 12 closure and authorization | 2026-09-04 |
-| 14 | V1 Release | NOT STARTED | — | Activate after Phase 13 closure and authorization | 2026-09-04 |
-| 15 | AI Readiness | FUTURE | — | Activate only after V1 is stable and authorized | 2026-09-04 |
-| 16 | Laravel AI / SDK Foundation | FUTURE | — | Activate after Phase 15 closure and authorization | 2026-09-04 |
-| 17 | Read-Only PRIME Chatbot | FUTURE | — | Activate after Phase 16 closure and authorization | 2026-09-04 |
-| 18 | RAG / Knowledge Assistant | FUTURE | — | Activate after Phase 17 closure and authorization | 2026-09-04 |
-| 19 | AI Analytics & Insights | FUTURE | — | Activate after Phase 18 closure and authorization | 2026-09-04 |
-| 20 | Assisted AI Actions | FUTURE | — | Activate after Phase 19 closure and authorization | 2026-09-04 |
-| 21 | AI Security, Evaluation & Production Rollout | FUTURE | — | Activate after Phase 20 closure and authorization | 2026-09-04 |
+## Phase Tracker
 
-### Phase 0 — Detailed Checklist
+| Phase | Status | Manager-facing position |
+| --- | --- | --- |
+| Phase 0 — Current Work Closure & Development Baseline | CLOSED / PASS | Historical closure complete. |
+| Phase 1 — Repository & Schema Integration Baseline | CLOSED / EXIT GATE PASS | Baseline accepted. |
+| Phase 2 — Historical Truth & Transaction Snapshot Foundation | ACTIVE / NEAR CLOSURE | One PM Review concurrency proof remains. |
+| Phase 3 — PM Lifecycle & Planning Completion | NOT STARTED | Do not activate yet. |
+| Phase 4+ | NOT STARTED / FUTURE | Preserve dependency order below. |
 
-- [x] TASK-004 Slice 1 — ACCEPTED
-- [x] TASK-004 Slice 2 — ACCEPTED
-- [x] TASK-005 Fake-Storage Isolation — CLOSED / PASS — MANAGER ACCEPTED
-- [x] TASK-004 Slice 3 — Authorization granted
-- [x] TASK-004 Slice 3 — Implementation complete
-- [x] Integrated MySQL R1/R2/R3 proof — PASS
-- [x] Final scoped regression — PASS
-- [x] Independent final review — PASS
-- [x] Manager acceptance — PASS
-- [x] TASK-004 — CLOSED
-- [x] ADR-004 current documentation synchronized
-- [x] Phase 0 exit gate — PASS
-- [x] Phase 0 — CLOSED
+## ADR Tracker
 
-### **YOU ARE HERE:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — ADR-007 CLOSED; next roadmap activation requires manager decision.
+Each entry uses **Sudah**, **Saat ini**, **Belum**, and **Next**. A task may be shared by multiple ADRs.
 
+### ADR-001 — Live PM vs Historical PM
+
+**Status: PARTIAL**
+
+- **TASK-002 [SHARED]**
+  - Slice 1 — DONE
+  - Slice 2 — DONE
+  - Slice 3 — DONE
+- **Sudah:** Live operational-window foundation exists.
+- **Saat ini:** None. ADR-009 separation gap remains ahead of this work.
+- **Belum:** Historical/manual PM source, provenance, performed/entered identity, and live-workflow isolation.
+- **Next:** Resolve ADR-009 no-historical-backlog gap, then plan historical PM.
+
+### ADR-002 — PM Option Catalog
+
+**Status: PARTIAL**
+
+- **TASK:** No canonical dedicated TASK exists yet.
+- **Sudah:** Per-standard options and execution option snapshots exist.
+- **Saat ini:** None.
+- **Belum:** Reusable master catalog, stable option identity, and deactivation workflow.
+- **Next:** Plan stable option identity before Historical PM.
+
+### ADR-003 — Preserve Historical Transactions
+
+**Status: DONE — DO NOT REOPEN WITHOUT CAUSAL REGRESSION**
+
+- **TASK-003**
+  - Slice 1 — DONE
+  - Slice 2 — DONE
+  - Slice 3 — DONE
+  - Slice 4 — DONE
+  - Slice 5 — DONE
+  - Slice 6 — DONE
+- **Sudah:** Historical protection and data-safety contract accepted.
+- **Saat ini:** None.
+- **Belum:** No ADR-003 work remains in the current roadmap state.
+- **Next:** Reopen only with causal regression evidence.
+
+### ADR-004 — One Execution per Occurrence
+
+**Status: DONE — DO NOT REOPEN WITHOUT CAUSAL REGRESSION**
+
+- **TASK-004**
+  - Slice 1 — DONE
+  - Slice 2 — DONE
+  - Slice 3 — DONE
+- **TASK-005 [SHARED]**
+  - DONE — supporting test-isolation work
+- **Sudah:** Parent-first locking, fail-closed duplicate preflight, unique constraint, and MySQL R1/R2/R3 proof accepted.
+- **Saat ini:** None.
+- **Belum:** No ADR-004 work remains in the current roadmap state.
+- **Next:** Reopen only with causal regression evidence.
+
+### ADR-005 — PM Lifecycle Policy
+
+**Status: DONE — DO NOT REOPEN WITHOUT CAUSAL REGRESSION**
+
+- **TASK-001**
+  - DONE
+- **Sudah:** Current lifecycle behavior implemented and verified.
+- **Saat ini:** None; distributed mutation architecture belongs to Phase 3.
+- **Belum:** Central lifecycle transition authority is not an ADR-005 reopening.
+- **Next:** Address central authority under ADR-010 / Phase 3.
+
+### ADR-006 — Schedule Reconciliation
+
+**Status: DONE — DO NOT REOPEN WITHOUT CAUSAL REGRESSION**
+
+- **TASK-002 [SHARED]**
+  - Slice 1 — DONE
+  - Slice 2 — DONE
+  - Slice 3 — DONE
+- **Sudah:** Protected-occurrence reconciliation is implemented and verified.
+- **Saat ini:** None.
+- **Belum:** Future PAUSED/ENDED/RETIRED interaction belongs to ADR-010.
+- **Next:** Reopen only with causal regression evidence.
+
+### ADR-007 — Transaction Snapshot Strategy
+
+**Status: DONE — CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**
+
+- **Slice A — DONE**
+- **Slice B — DONE**
+- **TASK:** No TASK number is assigned.
+- **Sudah:** Complete execution identity bundles are preserved atomically; PM Review and PM Report retain historical identity without silent master reinterpretation.
+- **Saat ini:** None for ADR-007.
+- **Belum:** Phase 2 still needs separate PM Review finalized-record concurrency proof; do not reopen ADR-007 for that gap.
+- **Next:** Complete Phase 2 exit gate through the bounded PM Review proof.
+
+### ADR-008 — Structured Breakdown Root Cause
+
+**Status: PARTIAL**
+
+- **TASK:** No canonical dedicated TASK exists yet.
+- **Sudah:** Free-text `root_cause`, `action_taken`, and `countermeasure` exist.
+- **Saat ini:** None.
+- **Belum:** Structured category, stable cause identity, taxonomy, UI/master, and historical mapping.
+- **Next:** Plan under Phase 6.
+
+### ADR-009 — Operational Window & Planning
+
+**Status: PARTIAL — GAP DISCOVERED**
+
+- **TASK-002 [SHARED]**
+  - Slice 1 — DONE
+  - Slice 2 — DONE
+  - Slice 3 — DONE
+- **Sudah:** `operational_from`, Asia/Jakarta `BusinessDate`, planning-period foundation, 12-calendar-month default, and legacy-NULL fail-closed behavior.
+- **Saat ini:** Not current; scheduled after Phase 2.
+- **Belum:** Past `operational_from` can materialize historical live occurrences; no-backlog remediation, global setting, rolling extension, idempotency, decrease policy, and lifecycle integration remain.
+- **Next:** Remediate historical live backlog after Phase 2 closure. Do not mark complete or reopen TASK-002.
+
+### ADR-010 — Schedule & Machine Lifecycle
+
+**Status: PLANNED**
+
+- **TASK:** No canonical dedicated TASK exists yet.
+- **Sudah:** Generic `is_active` behavior exists but does not satisfy this ADR.
+- **Saat ini:** Not started.
+- **Belum:** Schedule ACTIVE/PAUSED/ENDED, Machine ACTIVE/INACTIVE/RETIRED, and central transition authority.
+- **Next:** Activate only after dependency order and explicit manager authorization.
+
+## Shared TASK Mappings
+
+- **TASK-001:** ADR-005 — completed.
+- **TASK-002 [SHARED]:** ADR-001, ADR-006, ADR-009 — CLOSED / PASS; ADR-009 remains PARTIAL because of the newly discovered gap.
+- **TASK-003:** ADR-003 — Slices 1–6 CLOSED / PASS.
+- **TASK-004:** ADR-004 — Slices 1–3 CLOSED / MANAGER ACCEPTED.
+- **TASK-005 [SHARED]:** ADR-004 supporting fake-storage/test-isolation task — CLOSED / PASS / MANAGER ACCEPTED.
+
+## Phase 2 Exit Gate
+
+**Passed:** snapshot contract, historical display stability, and no silent master reinterpretation.
+**Remaining:** finalized-record update must fail closed against concurrent approval.
+**Status:** ACTIVE / NEAR CLOSURE. Phase 2 is not closed.
+
+## Preserved Historical Manual Tracking
+
+The prior `PRIME-MANUAL-TRACKING` note remains historical context. Its old Phase 1.1 priority is superseded by the accepted Phase 1 closure and is not current work.
 
 <!-- PRIME-MANUAL-TRACKING:START -->
 Last manual update:
-\- 2026-09-05 — TASK-004 / ADR-004 manager accepted and closed; Phase 0 exit gate passed.
+- 2026-09-05 — TASK-004 / ADR-004 manager accepted and closed; Phase 0 exit gate passed.
 
-User note:
-Banyak checkpoint lama belum pernah disimpan sebagai Git commit dan saat ini bercampur di staged/unstaged/untracked worktree.
-
-Current concern/blocker:
-
-- Protected 19-path staged checkpoint mixes TASK-002 and TASK-003 changes. 
-- Some unstaged files mix ADR-003 and ADR-004 hunks. 
-- Current-state docs/state require synchronization before docs commit. 
-- Ambient/local/generated files still require ownership classification.
-
-Manual next priority:
-Phase 1.1 — authorize safe checkpoint split and execute logical commit queue without losing accepted historical work.
+Historical user note:
+Earlier checkpoints were mixed across staged, unstaged, and untracked worktree state. This note is retained as history, not as the current gate.
 <!-- PRIME-MANUAL-TRACKING:END -->
 
-This block may be edited manually by the User. Future automated synchronization must preserve user-entered content unless explicitly authorized to change it.
-
-> Catatan: isi `PRIME-MANUAL-TRACKING` di atas dipertahankan sebagai catatan historis/manual. Klaim Phase 1.1 di dalamnya telah disupersede oleh penyelesaian rekonstruksi C1–C10.
-
-
-### Tracker Update Rules
+## Tracker Rules
 
 1. `IMPLEMENTED` does not mean `DONE`.
-2. Mark a checkbox complete only when its evidence/status is actually accepted.
-3. A task or slice becomes `CLOSED` only after implementation, verification, independent review, and manager acceptance.
-4. When a task or slice closes, update this tracker, `ACTIVE.md`, and `state.yaml` where applicable.
-5. When a Phase exit gate passes, mark the Phase `CLOSED` and activate the next Phase only after management authorization.
-6. Historical evidence must not be rewritten as current truth.
-7. Roadmap progress updates do not authorize implementation.
-8. Manual user notes must be preserved.
-
-### Recent Progress Updates
-
-| Date | Item | Change | Evidence |
-| ---- | ---- | ------ | -------- |
-| 2026-09-05 | TASK-004 / ADR-004 | CLOSED | Docs/work/session-reports/2026-09-05-TASK-004-manager-acceptance-closure.md |
-| 2026-09-05 | TASK-004 Slice 3 | R1/R2/R3 PASS; scoped regression 90 tests / 413 assertions / 0 failures / 0 errors | `Docs/work/session-reports/2026-09-05-PRIME-TASK-004-S3-execution-verification-attempt-3.md |
-| 2026-09-05 | Phase 1.1 Git Hygiene | C1–C10 reconstruction COMPLETE; Phase 1.1 DONE | Git hygiene audit and accepted checkpoint evidence |
-| 2026-09-07 | Phase 1 closure synchronization | HEAD d541d8d; staged files 0; PR1–PR3 and FR1–FR2 complete / accepted; Phase 1 exit gate READY FOR MANAGER CLOSURE | Current Git checkpoint and accepted reconstruction history |
-| 2026-09-07 | ADR-007 Slice A — Transaction Identity Snapshots | CLOSED / PASS / MANAGER ACCEPTED — published checkpoint 8f47e05 | Commit: feat(pm): snapshot execution transaction identity; 4 files, 229 insertions; SQLite regression, MySQL rehearsal, Laravel Migrator verification, independent review, manager acceptance all PASS |
-| 2026-09-09 | ADR-007 Slice B — Historical Read-Side Consistency | CLOSED / PASS / MANAGER ACCEPTED; Slice B source commit c531d5c; accepted local UAT bootstrap commit 5ccb5f8; focused regression 100 tests / 694 assertions PASS | Docs/work/evidence/ADR-007-Slice-B/historical-proof/ |
-
-
-### Future Tracker Item Template
-
-```text
-Item: TASK-XXX / Slice X
-Status: NOT STARTED | IN PROGRESS | VERIFIED | ACCEPTED | CLOSED
-Evidence: <path>
-Manager decision: <decision or pending>
-Updated: YYYY-MM-DD
-Next gate: <next action>
-```
+2. A task or slice becomes `CLOSED` only after implementation, verification, review, and manager acceptance.
+3. Phase closure does not activate the next phase without manager authorization.
+4. Historical evidence must not be rewritten as current truth.
+5. Roadmap progress does not authorize implementation.
 
 ------
 
@@ -306,46 +368,34 @@ Ini menjawab kekurangan terbesar pada Draft v1: V1 gate sebelumnya sudah mempuny
 # 4. Current Position
 
 ```text
+PHASE 2 — Historical Truth & Transaction Snapshot Foundation
+Status: ACTIVE / NEAR CLOSURE
 
-PHASE 2
-Historical Truth & Transaction Snapshot Foundation
+ADR-007 — Transaction Snapshot Strategy:
+CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+Slice A — Transaction Identity Snapshots
+Slice B — Historical Read-Side Consistency
+(No TASK number is assigned to ADR-007.)
 
-ADR-007 Slice A: CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
-Published code checkpoint: 8f47e05d955b5f2a50a49228bfd90c40bcb8f893
-
-ADR-007 Slice B: CLOSED / PASS / MANAGER ACCEPTED — 2026-09-09
-Slice B source commit: c531d5c (feat(pm): preserve historical identity in PM readers)
-Accepted local UAT bootstrap commit: 5ccb5f8 (test(uat): add safe local Playwright admin bootstrap)
-
-Phase 2 status: ACTIVE
-ADR-007 overall: IMPLEMENTED / VERIFIED / CLOSED
-```
-
-Current evidence:
-
-```text
-Published Slice-A code checkpoint:
-develop / 8f47e05d955b5f2a50a49228bfd90c40bcb8f893
-4 files, 229 insertions
-All verification gates PASS
-
-Closure/docs sync commit:
-this documentation closure commit
-
-Slice-A status: CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
-Slice-B status: CLOSED / PASS / MANAGER ACCEPTED
-Phase 1: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
-Phase 2: ACTIVE
-ADR-007 overall: IMPLEMENTED / VERIFIED / CLOSED
+Current published checkpoint:
+develop / 5c2977fb18b081e80790eb92d0f42b8da06d996e
 
 Current remaining sequence:
-ADR-007 CLOSED / PASS / MANAGER ACCEPTED
+PM Review finalized-record concurrency safety
+(update-vs-approve must fail closed for an execution that becomes approved)
 ↓
-next roadmap activation requires manager decision
+Phase 2 exit-gate verification
+↓
+Manager closure of Phase 2
+↓
+ADR-009 no-historical-backlog remediation
+↓
+Phase 3 activation only after manager authorization
 ```
 
-No commit execution is authorized by this roadmap update alone.
+Do not treat the PM Review concurrency proof as already done, do not reopen ADR-007 for that gap, and do not reopen TASK-002 for the ADR-009 gap.
 
+No commit execution is authorized by this roadmap update alone.
 
 ------
 
@@ -492,7 +542,7 @@ PHASE 0: CLOSED — 2026-09-05
 
 # PHASE 1 — Repository & Schema Integration Baseline
 
-**Status: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07** **Current work: Phase 2 analysis-planning activation**
+**Status: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07**
 
 
 ## Objective
@@ -540,7 +590,13 @@ PR1 / PR2 / PR3 COMPLETE — PASS / MANAGER ACCEPTED
 FR1 / FR2 COMPLETE — PASS / MANAGER ACCEPTED
 TASK-004 migration committed in C10
 TASK-005 isolation work committed in C8
-Next gate: ADR-007 Slice B — Historical Read-Side Consistency — bounded current-reader assessment / implementation planning
+
+Historical next gate at Phase 1 closure:
+ADR-007 Slice B — Historical Read-Side Consistency.
+
+SUPERSEDED:
+ADR-007 Slice B is now CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED.
+The current project gate is defined by the manager view at the top of this roadmap.
 ```
 
 
@@ -649,11 +705,12 @@ Phase 1 exit gate: **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07**
 ------
 
 # PHASE 2 — Historical Truth & Transaction Snapshot Foundation
-**Status: ACTIVE / ADR-007 CLOSED**
+**Status: ACTIVE / NEAR CLOSURE**
 
-**Current work:** ADR-007 closed; next roadmap activation requires manager decision.
+**Current work:** PM Review finalized-record concurrency safety — update-vs-approve must fail closed for an execution that becomes approved.
 
-**Next gate:** Manager decision on the next roadmap item from the declared dependency order.
+**Next gate:** Manager-authorized bounded plan/proof, then Phase 2 exit-gate verification and manager closure.
+
 
 ## Objective
 
@@ -676,13 +733,12 @@ Checksheet/config version
 Part
 Standard
 Option identity
-Operator
 Admin/reviewer
 Performed information
 Transaction provenance
 ```
 
-Current PRIME sudah mempunyai banyak snapshot, tetapi PM machine/location/configuration identity masih belum lengkap.
+**Historical baseline before ADR-007 closure:** machine, location, and configuration transaction identity were incomplete. ADR-007 Slice A and Slice B addressed and verified that gap. Current ADR-007 status: **CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**.
 
 ------
 
@@ -1034,7 +1090,9 @@ Menyelesaikan correctness debt yang memotong beberapa module.
 
 ### 7.1 PM Review Serialization — RI-012
 
-Prevent:
+**Status:** PULLED FORWARD TO PHASE 2 EXIT GATE — CURRENT / NOT YET CLOSED
+
+**Original Phase 7 purpose:** Prevent the following overlap from producing a stale post-approval update:
 
 ```text
 Admin A edit
@@ -1042,7 +1100,11 @@ Admin A edit
 Admin B approve
 ```
 
-dari menghasilkan stale post-approval update.
+**Current ownership:** Phase 2 finalized-record concurrency safety. RI-012 implementation/proof is pulled forward because finalized-record historical safety is required before Phase 2 can close.
+
+**Phase 7 responsibility after Phase 2 PASS:** Regression/integration verification only. Do not reimplement RI-012 without causal regression evidence.
+
+The invariant remains: a stale post-approval mutation must fail closed. RI-012 is not yet verified or closed.
 
 ------
 
@@ -1888,7 +1950,7 @@ OMP menilai keseluruhan chain V1 → AI readiness → SDK → read-only chatbot 
 | RI-009 Structured Breakdown RCA             | Phase 6 → 15 → 19                     |
 | RI-010 Canonical execution closure          | Phase 0                               |
 | RI-011 Schema deployment alignment          | Phase 1 → 14                          |
-| RI-012 PM Review serialization              | Phase 7                               |
+| RI-012 PM Review serialization              | Phase 2 — pulled forward current exit-safety work → Phase 7 regression/integration verification |
 | RI-013 PM cron serialization                | Phase 7                               |
 | RI-014 Breakdown serialization              | Phase 6 / 7                           |
 | RI-015 File/DB consistency                  | Phase 7 → 13                          |
@@ -2032,48 +2094,31 @@ Roadmap progress tracking does not change the required authorization boundary or
 ```text
 CURRENT POSITION
 
-PHASE 2
-Historical Truth & Transaction Snapshot Foundation
-↓
-ADR-007 Slice A — CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
-↓
-ADR-007 Slice B — CLOSED / PASS / MANAGER ACCEPTED (2026-09-09; source commit c531d5c)
+PHASE 2 — Historical Truth & Transaction Snapshot Foundation
+Status: ACTIVE / NEAR CLOSURE
 
-PHASE 1
-Repository & Schema Integration Baseline
-↓
+CURRENT
+PM Review finalized-record concurrency safety
+(update-vs-approve must fail closed for an execution that becomes approved)
+
+LAST CLOSED MAJOR ITEM
+ADR-007 — Transaction Snapshot Strategy
+CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+
+PUBLISHED CHECKPOINT
+develop / 5c2977fb18b081e80790eb92d0f42b8da06d996e
+
+CLOSED PHASES
+Phase 0 — CLOSED / PASS
 Phase 1 — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
-PHASE 0
-CLOSED / PASS
-
-TASK-004
-CLOSED / MANAGER ACCEPTED
-
-ADR-004
-Accepted — Implemented + Verified
-
-TASK-005
-CLOSED / PASS — MANAGER ACCEPTED
-
-GIT HYGIENE AUDIT
-COMPLETE
-
-CURRENT PHASE STATUS
-Phase 1 — CLOSED / EXIT GATE PASS
-Phase 1.1 — DONE
-Phase 1.2 — CLOSED / PASS
-Phase 1.3 — CLOSED / PASS
-Required Phase 1 residual blockers — CAPTURED
-Phase 2 — ACTIVE
-
 CURRENT GATE
-Next roadmap activation
+Manager-authorized bounded plan/proof for PM Review update-vs-approve
+concurrency safety, then Phase 2 exit-gate verification and manager closure
 
-NEXT MANAGEMENT GATE
-Manager decision on the next roadmap item from the declared dependency order
-no next implementation authorized without manager decision
-
+AFTER PHASE 2
+ADR-009 no-historical-backlog remediation
+Phase 3 activation only after manager authorization
 ```
 
 No Git index mutation or commit is authorized by this roadmap update alone.
@@ -2132,25 +2177,21 @@ Implementation authorization:
 NONE BY ROADMAP ALONE
 
 Current phase:
-Phase 2 — Historical Truth & Transaction Snapshot Foundation — ACTIVE
-
-Current Slice-A status:
-ADR-007 Slice A — Transaction Identity Snapshots — CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
-
-Published Slice-A code checkpoint:
-8f47e05d955b5f2a50a49228bfd90c40bcb8f893
+Phase 2 — Historical Truth & Transaction Snapshot Foundation — ACTIVE / NEAR CLOSURE
 
 Current work:
-ADR-007 — Transaction Snapshot Strategy — CLOSED / PASS / MANAGER ACCEPTED
+PM Review finalized-record concurrency safety
+(update-vs-approve must fail closed for an execution that becomes approved)
 
-ADR-007 overall:
-IMPLEMENTED / VERIFIED / CLOSED
+ADR-007:
+IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
-Current Git gate:
-develop / origin-develop parent dcf4ff77 / staged 0
+Current Git checkpoint:
+develop / 5c2977fb18b081e80790eb92d0f42b8da06d996e / staged 0
 
 Next management handoff:
-manager decision on next roadmap item
+bounded plan/proof for PM Review update-vs-approve concurrency safety,
+then Phase 2 exit-gate verification and manager closure
 
 Next implementation authorization:
 NONE until manager decision
