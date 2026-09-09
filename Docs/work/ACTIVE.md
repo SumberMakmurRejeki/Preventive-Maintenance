@@ -72,7 +72,7 @@ Historical proof used mutable Machine name and Location name changes. `machine_c
 
 ### Current Git checkpoint
 
-Current session commits: `c531d5c` and `5ccb5f8`; staged files `0` immediately after each commit. Ambient work remains intentionally dirty and uncommitted.
+Current session commits: `c531d5c`, `5ccb5f8`, and `4eb9acb`; staged files `0` immediately after each commit. Ambient work remains intentionally dirty and uncommitted.
 
 ### Historical TASK-004 verification sections
 

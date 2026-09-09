@@ -29,7 +29,7 @@ planning:
 
 git:
   branch: develop
-  head: "5ccb5f8"
+  head: "4eb9acb"
   dirty_checkpoint_expected: true
   staged_file_count: 0
   staged_checkpoint_sha256: null
