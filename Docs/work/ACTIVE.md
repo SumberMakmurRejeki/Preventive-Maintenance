@@ -1,13 +1,13 @@
 # Active Work
 
-**Last Updated:** 2026-09-08
+**Last Updated:** 2026-09-09
 
 **Roadmap Phase:** Phase 2 — Historical Truth & Transaction Snapshot Foundation
 **Authoritative Roadmap:** `Docs/roadmap.md`
-**Current Task:** ADR-007 Slice B — Historical Read-Side Consistency — bounded analysis / planning
-**Planning Document:** `Docs/roadmap.md` (canonical current position)
-**Previous Task:** ADR-007 Slice A — Transaction Identity Snapshots (**CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**)
-**Status:** Phase 2 **ACTIVE**; ADR-007 Slice A **CLOSED / PASS / MANAGER ACCEPTED**; ADR-007 Slice B **NEXT / PLANNING ONLY**; Slice B implementation **NOT AUTHORIZED**
+**Current Task:** ADR-007 — Transaction Snapshot Strategy (**CLOSED / PASS / MANAGER ACCEPTED**)
+**Planning Document:** `Docs/decisions/ADR-007-transaction-snapshot-strategy.md`
+**Previous Task:** ADR-007 Slice B — Historical Read-Side Consistency (**CLOSED / PASS / MANAGER ACCEPTED**)
+**Status:** Phase 2 **ACTIVE**; ADR-007 **IMPLEMENTED / VERIFIED / CLOSED**; next roadmap activation requires manager decision
 
 ## Current ADR Assessment
 
@@ -56,27 +56,27 @@ R4 NULL/manual control tidak berlaku karena current FK adalah NOT NULL.
 
 ## Current Handoff
 
-**Next Action:** `ADR-007 Slice B bounded current-reader assessment / implementation planning`
+**Next Action:** Determine the next roadmap item from the declared dependency order; do not invent a new phase.
 
-**Implementation status:** ADR-007 Slice A delivered transaction-level snapshots for machine code/name, location code/name, and checksheet code/name while retaining existing provenance foreign keys. Slice A passed implementation verification, SQLite regression, MySQL rehearsal, real Laravel Migrator verification, independent review, and manager acceptance.
+**Implementation status:** ADR-007 Slice A and Slice B are implemented, verified, and manager accepted. Slice B preserves complete transaction identity bundles for PM Review and PM Report while keeping current-master filtering context available.
 
-**Slice-A code checkpoint:** Commit `8f47e05d955b5f2a50a49228bfd90c40bcb8f893` (`feat(pm): snapshot execution transaction identity`) is committed and pushed to `origin/develop`.
+**Slice-B source checkpoint:** Commit `c531d5c` (`feat(pm): preserve historical identity in PM readers`). Accepted local UAT bootstrap tooling is separate commit `5ccb5f8`.
 
-**Canonical roadmap synchronization:** `Docs/roadmap.md` is authoritative. Phase 2 remains active. ADR-007 Slice A is closed; Slice B is the next planning gate. No Slice B implementation is authorized.
+**Canonical roadmap synchronization:** `Docs/roadmap.md` remains authoritative. Phase 2 remains active because the roadmap does not declare a next authorized implementation automatically.
 
 ### Current closure checkpoint
 
-ADR-007 Slice A: **CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED — 2026-09-07**.
+ADR-007: **IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED — 2026-09-09**.
 
-ADR-007 overall remains **PARTIAL / IN PROGRESS**. Historical read-side consistency, reviewer/history provenance work, and explicit finalized correction policy remain open.
-
-PR4 remains **HOLD / NON-BLOCKING**. C11 / P2 remains **HOLD / NOT AUTHORIZED**.
+Historical proof used mutable Machine name and Location name changes. `machine_code` rename proof is not claimed because it is immutable under the current PRIME contract.
 
 ### Current Git checkpoint
 
-Published Slice-A code checkpoint: `develop` / `8f47e05d955b5f2a50a49228bfd90c40bcb8f893` / staged files `0`. This SHA is the parent code checkpoint for the documentation/state synchronization commit.
+Current session commits: `c531d5c` and `5ccb5f8`; staged files `0` immediately after each commit. Ambient work remains intentionally dirty and uncommitted.
 
-<!-- Historical checkpoint (pre-Slice-A): Phase 1 exit gate CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07; Git checkpoint d541d8d8ba46a12e60d77d506e4dadc38b22d5cf; no push performed at that time. -->
+### Historical TASK-004 verification sections
+
+The following verification sections document the completed TASK-004 / ADR-004 slices and remain as historical evidence.
 
 ### Current Slice 2 Verification and Closure — 2026-09-02/03
 

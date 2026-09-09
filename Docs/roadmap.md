@@ -9,7 +9,7 @@
 **Technical validation:** PASS WITH NON-BLOCKING NOTES
 **Implementation authorization:** NONE BY ROADMAP ALONE — roadmap ini sendiri tidak mengotorisasi implementasi apa pun
 **Canonical document:** `Docs/roadmap.md`
-**Current operational position:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — ADR-007 Slice A CLOSED; Slice B analysis/planning next
+**Current operational position:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — ADR-007 CLOSED / PASS / MANAGER ACCEPTED (Slice A published 8f47e05; Slice B committed c531d5c); next roadmap activation requires manager decision
 
 **Approved management source:** `Docs/work/MASTER-ROADMAP-PRIME-v1-FINAL.md`
 **Repository validation evidence:** `Docs/work/session-reports/2026-09-03-PRIME-master-roadmap-v1-final-repository-validation.md`
@@ -18,12 +18,12 @@
 
 | Field                        | Current value                                                |
 | ---------------------------- | ------------------------------------------------------------ |
-| Last Updated                 | 2026-09-07                                                   |
+| Last Updated                 | 2026-09-09                                                   |
 | Current Phase                | Phase 2 — Historical Truth & Transaction Snapshot Foundation |
-| Current Task                 | ADR-007 Slice B — Historical Read-Side Consistency — planning / analysis next |
-| Last Closed Item             | ADR-007 Slice A — Transaction Identity Snapshots — CLOSED / PASS / MANAGER ACCEPTED — 2026-09-07 |
-| Current Gate                 | Bounded Slice B current-reader assessment / implementation planning |
-| Next Gate                    | ADR-007 Slice B bounded analysis / planning (implementation NOT AUTHORIZED) |
+| Current Task                 | ADR-007 — Transaction Snapshot Strategy — CLOSED / PASS / MANAGER ACCEPTED — 2026-09-09 |
+| Last Closed Item             | ADR-007 Slice B — Historical Read-Side Consistency — CLOSED / PASS / MANAGER ACCEPTED — 2026-09-09 |
+| Current Gate                 | Next roadmap activation (requires manager decision)          |
+| Next Gate                    | Manager decision on next roadmap item from declared dependency order |
 
 | V1 Status                    | NOT READY                                                    |
 | Implementation Authorization | NONE FOR COMMIT EXECUTION UNTIL USER + CHATGPT APPROVAL      |
@@ -34,7 +34,7 @@
 | ----- | ---- | --------------- | ------------------------ | --------- | ------- |
 | 0 | Current Work Closure & Development Baseline | CLOSED | TASK-004 / ADR-004 CLOSED; TASK-005 CLOSED; R1/R2/R3 PASS; regression PASS; independent review PASS; manager acceptance complete | Phase 0 exit gate PASS | 2026-09-05 |
 | 1 | Repository & Schema Integration Baseline | CLOSED / EXIT GATE PASS | C1–C10; PR1–PR3; FR1–FR2 complete / accepted; manager acceptance complete | Phase 2 activation for analysis-planning | 2026-09-07 |
-| 2 | Historical Truth & Transaction Snapshot Foundation | ACTIVE | ADR-007 Slice A CLOSED / PASS / MANAGER ACCEPTED (2026-09-07); published checkpoint 8f47e05 | Bounded Slice B analysis / planning | 2026-09-07 |
+| 2 | Historical Truth & Transaction Snapshot Foundation | ACTIVE | ADR-007 CLOSED / PASS / MANAGER ACCEPTED (2026-09-09); Slice A published checkpoint 8f47e05; Slice B source commit c531d5c | Manager decision on next roadmap item | 2026-09-09 |
 | 3 | PM Lifecycle & Planning Completion | NOT STARTED | — | Activate after Phase 2 closure and authorization | 2026-09-04 |
 | 4 | PM Configuration Integrity & Stable Option Identity | NOT STARTED | — | Activate after Phase 3 closure and authorization | 2026-09-04 |
 | 5 | Historical PM | NOT STARTED | — | Activate after Phase 4 closure and authorization | 2026-09-04 |
@@ -71,7 +71,7 @@
 - [x] Phase 0 exit gate — PASS
 - [x] Phase 0 — CLOSED
 
-### **YOU ARE HERE:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — ADR-007 Slice A CLOSED; Slice B planning next.
+### **YOU ARE HERE:** Phase 2 — Historical Truth & Transaction Snapshot Foundation — ADR-007 CLOSED; next roadmap activation requires manager decision.
 
 
 <!-- PRIME-MANUAL-TRACKING:START -->
@@ -117,6 +117,7 @@ This block may be edited manually by the User. Future automated synchronization 
 | 2026-09-05 | Phase 1.1 Git Hygiene | C1–C10 reconstruction COMPLETE; Phase 1.1 DONE | Git hygiene audit and accepted checkpoint evidence |
 | 2026-09-07 | Phase 1 closure synchronization | HEAD d541d8d; staged files 0; PR1–PR3 and FR1–FR2 complete / accepted; Phase 1 exit gate READY FOR MANAGER CLOSURE | Current Git checkpoint and accepted reconstruction history |
 | 2026-09-07 | ADR-007 Slice A — Transaction Identity Snapshots | CLOSED / PASS / MANAGER ACCEPTED — published checkpoint 8f47e05 | Commit: feat(pm): snapshot execution transaction identity; 4 files, 229 insertions; SQLite regression, MySQL rehearsal, Laravel Migrator verification, independent review, manager acceptance all PASS |
+| 2026-09-09 | ADR-007 Slice B — Historical Read-Side Consistency | CLOSED / PASS / MANAGER ACCEPTED; Slice B source commit c531d5c; accepted local UAT bootstrap commit 5ccb5f8; focused regression 100 tests / 694 assertions PASS | Docs/work/evidence/ADR-007-Slice-B/historical-proof/ |
 
 
 ### Future Tracker Item Template
@@ -312,10 +313,12 @@ Historical Truth & Transaction Snapshot Foundation
 ADR-007 Slice A: CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 Published code checkpoint: 8f47e05d955b5f2a50a49228bfd90c40bcb8f893
 
-ADR-007 Slice B: Historical Read-Side Consistency — NEXT / PLANNING ONLY
+ADR-007 Slice B: CLOSED / PASS / MANAGER ACCEPTED — 2026-09-09
+Slice B source commit: c531d5c (feat(pm): preserve historical identity in PM readers)
+Accepted local UAT bootstrap commit: 5ccb5f8 (test(uat): add safe local Playwright admin bootstrap)
 
 Phase 2 status: ACTIVE
-ADR-007 overall: PARTIAL / IN PROGRESS
+ADR-007 overall: IMPLEMENTED / VERIFIED / CLOSED
 ```
 
 Current evidence:
@@ -327,21 +330,18 @@ develop / 8f47e05d955b5f2a50a49228bfd90c40bcb8f893
 All verification gates PASS
 
 Closure/docs sync commit:
-develop / 089b3db3118b21b1ea81c6147d2da56e1b4659d3
+this documentation closure commit
 
 Slice-A status: CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+Slice-B status: CLOSED / PASS / MANAGER ACCEPTED
 Phase 1: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 Phase 2: ACTIVE
-ADR-007 overall: PARTIAL / IN PROGRESS
+ADR-007 overall: IMPLEMENTED / VERIFIED / CLOSED
 
 Current remaining sequence:
-ADR-007 Slice A CLOSED / PASS / MANAGER ACCEPTED
+ADR-007 CLOSED / PASS / MANAGER ACCEPTED
 ↓
-ADR-007 Slice B — Historical Read-Side Consistency
-↓
-bounded current-reader assessment / implementation planning
-↓
-implementation NOT AUTHORIZED for Slice B
+next roadmap activation requires manager decision
 ```
 
 No commit execution is authorized by this roadmap update alone.
@@ -649,11 +649,11 @@ Phase 1 exit gate: **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07**
 ------
 
 # PHASE 2 — Historical Truth & Transaction Snapshot Foundation
-**Status: ACTIVE / ANALYSIS-PLANNING**
+**Status: ACTIVE / ADR-007 CLOSED**
 
-**Current work:** ADR-007 Slice B — Historical Read-Side Consistency — bounded analysis / planning
+**Current work:** ADR-007 closed; next roadmap activation requires manager decision.
 
-**Next gate:** ADR-007 Slice B current-reader assessment / implementation planning
+**Next gate:** Manager decision on the next roadmap item from the declared dependency order.
 
 ## Objective
 
@@ -2037,7 +2037,7 @@ Historical Truth & Transaction Snapshot Foundation
 ↓
 ADR-007 Slice A — CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 ↓
-ADR-007 Slice B — Historical Read-Side Consistency — bounded analysis / planning
+ADR-007 Slice B — CLOSED / PASS / MANAGER ACCEPTED (2026-09-09; source commit c531d5c)
 
 PHASE 1
 Repository & Schema Integration Baseline
@@ -2068,11 +2068,11 @@ Required Phase 1 residual blockers — CAPTURED
 Phase 2 — ACTIVE
 
 CURRENT GATE
-Slice B current-reader assessment / implementation planning
+Next roadmap activation
 
 NEXT MANAGEMENT GATE
-ADR-007 Slice B bounded current-reader assessment / implementation planning
-implementation NOT AUTHORIZED for Slice B
+Manager decision on the next roadmap item from the declared dependency order
+no next implementation authorized without manager decision
 
 ```
 
@@ -2141,17 +2141,17 @@ Published Slice-A code checkpoint:
 8f47e05d955b5f2a50a49228bfd90c40bcb8f893
 
 Current work:
-ADR-007 Slice B — Historical Read-Side Consistency — bounded analysis / planning
+ADR-007 — Transaction Snapshot Strategy — CLOSED / PASS / MANAGER ACCEPTED
 
 ADR-007 overall:
-PARTIAL / IN PROGRESS
+IMPLEMENTED / VERIFIED / CLOSED
 
 Current Git gate:
-develop / HEAD 089b3db3118b21b1ea81c6147d2da56e1b4659d3 / staged 0
+develop / origin-develop parent dcf4ff77 / staged 0
 
 Next management handoff:
-ADR-007 Slice B current-reader assessment / implementation planning
+manager decision on next roadmap item
 
-Slice B implementation authorization:
-NONE
+Next implementation authorization:
+NONE until manager decision
 ```
