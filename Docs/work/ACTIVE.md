@@ -1,17 +1,17 @@
 # Active Work
 
-**Last Updated:** 2026-09-09
+**Last Updated:** 2026-09-10
 
-**Roadmap Phase:** Phase 2 — Historical Truth & Transaction Snapshot Foundation
+**Roadmap Phase:** Phase 2 — Historical Truth & Transaction Snapshot Foundation (**CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**)
 **Authoritative Roadmap:** `Docs/roadmap.md`
-**Current Work:** PM Review finalized-record concurrency safety
-**Status:** Phase 2 **ACTIVE / NEAR CLOSURE**
-**Last Closed Major Item:** ADR-007 — Transaction Snapshot Strategy (**CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**)
-**Current Published Checkpoint:** `5c2977fb18b081e80790eb92d0f42b8da06d996e`
-**Next Action:** Manager-authorized bounded plan/proof for PM Review update-vs-approve concurrency safety.
-**After:** Phase 2 manager closure if the proof passes; then ADR-009 no-historical-backlog remediation.
+**Current Work:** ADR-009 no-historical-backlog remediation (**PARTIAL — GAP DISCOVERED**)
+**Status:** Phase 2 **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**
+**Last Closed Major Item:** RI-012 — PM Review Serialization (**CLOSED / PASS / MANAGER ACCEPTED**)
+**Accepted Engineering Checkpoint:** `d58f7c23d7a54df3d17a3a5b678cb844f9521710`
+**Next Action:** Bounded ADR-009 analysis/proof/plan; implementation requires explicit manager authorization.
+**After:** Phase 3 remains **NOT STARTED** and requires explicit manager authorization.
 
-ADR-007 is not reopened. TASK-002 remains closed. Phase 3 is not started and is not activated by this handoff.
+ADR-007 remains closed / pass / manager accepted / published. TASK-002 remains closed. Phase 3 is not started and is not activated by this handoff.
 
 ## Current ADR Assessment
 
@@ -60,23 +60,27 @@ R4 NULL/manual control tidak berlaku karena current FK adalah NOT NULL.
 
 ## Current Handoff
 
-**Current Work:** PM Review finalized-record concurrency safety.
+**Current Work:** ADR-009 no-historical-backlog remediation (**PARTIAL — GAP DISCOVERED**).
 
-**Implementation status:** ADR-007 Slice A and Slice B are implemented, verified, manager accepted, and published. Phase 2 remains active because finalized-record update-vs-approve concurrency safety is still unproven.
+**Implementation status:** RI-012 PM Review serialization is implemented, verified, independently reviewed, manager accepted, and closed. Phase 2 exit gate passed and was manager accepted.
 
-**Next Action:** Manager-authorized bounded plan/proof for PM Review update-vs-approve concurrency safety.
+**Accepted evidence:** authoritative locked re-read; SQLite regression PASS; MySQL R1/R2/R3 PASS; final independent review PASS.
 
-**Canonical roadmap synchronization:** `Docs/roadmap.md` remains authoritative. ADR-007 is not reopened; TASK-002 remains closed; ADR-009 is next after Phase 2 and is not current.
+**Next Action:** Bounded ADR-009 analysis/proof/plan; implementation is not authorized by this handoff.
+
+**Canonical roadmap synchronization:** `Docs/roadmap.md` remains authoritative. ADR-007 and TASK-002 remain closed; Phase 3 is not started.
 
 ### Current closure checkpoint
 
 ADR-007: **IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED — 2026-09-09**.
 
+RI-012: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / CLOSED / PASS / MANAGER ACCEPTED — 2026-09-10**.
+
 Historical proof used mutable Machine name and Location name changes. `machine_code` rename proof is not claimed because it is immutable under the current PRIME contract.
 
-### Current Git checkpoint
+### Accepted engineering checkpoint
 
-Published tracking checkpoint: `5c2977fb18b081e80790eb92d0f42b8da06d996e`; staged files `0`; ambient work remains intentionally dirty and uncommitted.
+Accepted engineering checkpoint: `d58f7c23d7a54df3d17a3a5b678cb844f9521710`; staged files `0`; ambient work remains intentionally dirty and uncommitted.
 
 ### Historical TASK-004 verification sections
 

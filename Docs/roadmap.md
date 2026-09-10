@@ -2,8 +2,8 @@
 
 **Project:** PRIME — Preventive Maintenance System
 **Canonical document:** `Docs/roadmap.md`
-**Last synchronized:** 2026-09-09
-**Published checkpoint:** `develop @ 5c2977fb18b081e80790eb92d0f42b8da06d996e`
+**Last synchronized:** 2026-09-10
+**Accepted engineering checkpoint:** `develop @ d58f7c23d7a54df3d17a3a5b678cb844f9521710`
 **Authorization:** Roadmap tracking does not authorize implementation, commits, or deployment.
 
 ## Posisi Saat Ini
@@ -11,15 +11,13 @@
 **Phase 2 — Historical Truth & Transaction Snapshot Foundation**
 
 **CURRENT:**
-- PM Review finalized-record concurrency safety — prove or remediate update-vs-approve so finalized-record mutation fails closed when approval overlaps.
+- ADR-009 — no-historical-backlog remediation — **PARTIAL — GAP DISCOVERED**.
+- Bounded analysis/proof/plan is required before implementation; this status does not authorize implementation.
 
 **NEXT:**
-- Manager-authorized bounded plan/proof for PM Review update-vs-approve concurrency.
-- Phase 2 exit-gate verification.
-- Manager closure of Phase 2 if the remaining proof passes.
+- Manager decision on the bounded ADR-009 analysis/proof/plan and any later implementation authorization.
 
 **AFTER:**
-- ADR-009 no-historical-backlog remediation.
 - Phase 3 activation only after explicit manager authorization.
 
 ## Phase Tracker
@@ -28,7 +26,7 @@
 | --- | --- | --- |
 | Phase 0 — Current Work Closure & Development Baseline | CLOSED / PASS | Historical closure complete. |
 | Phase 1 — Repository & Schema Integration Baseline | CLOSED / EXIT GATE PASS | Baseline accepted. |
-| Phase 2 — Historical Truth & Transaction Snapshot Foundation | ACTIVE / NEAR CLOSURE | One PM Review concurrency proof remains. |
+| Phase 2 — Historical Truth & Transaction Snapshot Foundation | CLOSED / EXIT GATE PASS / MANAGER ACCEPTED | All currently-known Phase 2 exit requirements pass. |
 | Phase 3 — PM Lifecycle & Planning Completion | NOT STARTED | Do not activate yet. |
 | Phase 4+ | NOT STARTED / FUTURE | Preserve dependency order below. |
 
@@ -121,10 +119,8 @@ Each entry uses **Sudah**, **Saat ini**, **Belum**, and **Next**. A task may be 
 - **Slice A — DONE**
 - **Slice B — DONE**
 - **TASK:** No TASK number is assigned.
-- **Sudah:** Complete execution identity bundles are preserved atomically; PM Review and PM Report retain historical identity without silent master reinterpretation.
-- **Saat ini:** None for ADR-007.
-- **Belum:** Phase 2 still needs separate PM Review finalized-record concurrency proof; do not reopen ADR-007 for that gap.
-- **Next:** Complete Phase 2 exit gate through the bounded PM Review proof.
+- **Belum:** No ADR-007 work remains. PM Review serialization is tracked as RI-012 closure evidence, not an ADR-007 reopening.
+- **Next:** Maintain regression/integration verification only; reopen only with causal regression evidence.
 
 ### ADR-008 — Structured Breakdown Root Cause
 
@@ -145,9 +141,9 @@ Each entry uses **Sudah**, **Saat ini**, **Belum**, and **Next**. A task may be 
   - Slice 2 — DONE
   - Slice 3 — DONE
 - **Sudah:** `operational_from`, Asia/Jakarta `BusinessDate`, planning-period foundation, 12-calendar-month default, and legacy-NULL fail-closed behavior.
-- **Saat ini:** Not current; scheduled after Phase 2.
+- **Saat ini:** **Current next management work:** no-historical-backlog remediation.
 - **Belum:** Past `operational_from` can materialize historical live occurrences; no-backlog remediation, global setting, rolling extension, idempotency, decrease policy, and lifecycle integration remain.
-- **Next:** Remediate historical live backlog after Phase 2 closure. Do not mark complete or reopen TASK-002.
+- **Next:** Bounded ADR-009 analysis/proof/plan. Do not mark complete or reopen TASK-002; implementation is not authorized by this status.
 
 ### ADR-010 — Schedule & Machine Lifecycle
 
@@ -169,9 +165,10 @@ Each entry uses **Sudah**, **Saat ini**, **Belum**, and **Next**. A task may be 
 
 ## Phase 2 Exit Gate
 
-**Passed:** snapshot contract, historical display stability, and no silent master reinterpretation.
-**Remaining:** finalized-record update must fail closed against concurrent approval.
-**Status:** ACTIVE / NEAR CLOSURE. Phase 2 is not closed.
+**Passed:** snapshot contract, historical display stability, no silent master reinterpretation, and RI-012 finalized-record concurrency safety.
+**Evidence:** authoritative locked re-read; SQLite regression PASS; MySQL R1/R2/R3 PASS; final independent review PASS.
+**Remaining:** None currently known for the Phase 2 exit gate.
+**Status:** CLOSED / EXIT GATE PASS / MANAGER ACCEPTED.
 
 ## Preserved Historical Manual Tracking
 
@@ -369,7 +366,7 @@ Ini menjawab kekurangan terbesar pada Draft v1: V1 gate sebelumnya sudah mempuny
 
 ```text
 PHASE 2 — Historical Truth & Transaction Snapshot Foundation
-Status: ACTIVE / NEAR CLOSURE
+Status: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
 ADR-007 — Transaction Snapshot Strategy:
 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
@@ -377,23 +374,20 @@ Slice A — Transaction Identity Snapshots
 Slice B — Historical Read-Side Consistency
 (No TASK number is assigned to ADR-007.)
 
-Current published checkpoint:
-develop / 5c2977fb18b081e80790eb92d0f42b8da06d996e
+RI-012 — PM Review Serialization:
+CLOSED / PASS / MANAGER ACCEPTED
 
-Current remaining sequence:
-PM Review finalized-record concurrency safety
-(update-vs-approve must fail closed for an execution that becomes approved)
-↓
-Phase 2 exit-gate verification
-↓
-Manager closure of Phase 2
-↓
+Accepted engineering checkpoint:
+develop / d58f7c23d7a54df3d17a3a5b678cb844f9521710
+
+Current management sequence:
 ADR-009 no-historical-backlog remediation
+(bounded analysis/proof/plan required; implementation is not authorized)
 ↓
 Phase 3 activation only after manager authorization
 ```
 
-Do not treat the PM Review concurrency proof as already done, do not reopen ADR-007 for that gap, and do not reopen TASK-002 for the ADR-009 gap.
+RI-012 proof is closed and must not be repeated without causal regression evidence. Do not reopen ADR-007 for this gap or TASK-002 for the ADR-009 gap.
 
 No commit execution is authorized by this roadmap update alone.
 
@@ -705,11 +699,11 @@ Phase 1 exit gate: **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07**
 ------
 
 # PHASE 2 — Historical Truth & Transaction Snapshot Foundation
-**Status: ACTIVE / NEAR CLOSURE**
+**Status: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**
 
-**Current work:** PM Review finalized-record concurrency safety — update-vs-approve must fail closed for an execution that becomes approved.
+**Current work:** ADR-009 no-historical-backlog remediation — **PARTIAL — GAP DISCOVERED**.
 
-**Next gate:** Manager-authorized bounded plan/proof, then Phase 2 exit-gate verification and manager closure.
+**Next gate:** Bounded ADR-009 analysis/proof/plan; implementation requires explicit manager authorization.
 
 
 ## Objective
@@ -1090,7 +1084,7 @@ Menyelesaikan correctness debt yang memotong beberapa module.
 
 ### 7.1 PM Review Serialization — RI-012
 
-**Status:** PULLED FORWARD TO PHASE 2 EXIT GATE — CURRENT / NOT YET CLOSED
+**Status:** SATISFIED EARLY IN PHASE 2 — CLOSED / PASS / MANAGER ACCEPTED
 
 **Original Phase 7 purpose:** Prevent the following overlap from producing a stale post-approval update:
 
@@ -1100,11 +1094,11 @@ Admin A edit
 Admin B approve
 ```
 
-**Current ownership:** Phase 2 finalized-record concurrency safety. RI-012 implementation/proof is pulled forward because finalized-record historical safety is required before Phase 2 can close.
+**Accepted evidence:** authoritative in-transaction `PmExecution` lock/re-read; SQLite regression PASS; MySQL R1/R2/R3 PASS; final independent review PASS.
 
-**Phase 7 responsibility after Phase 2 PASS:** Regression/integration verification only. Do not reimplement RI-012 without causal regression evidence.
+**Phase 7 responsibility:** Regression/integration verification only. Do not reimplement RI-012 without causal regression evidence.
 
-The invariant remains: a stale post-approval mutation must fail closed. RI-012 is not yet verified or closed.
+The invariant remains: a stale post-approval mutation must fail closed. RI-012 is verified and closed.
 
 ------
 
@@ -1950,7 +1944,7 @@ OMP menilai keseluruhan chain V1 → AI readiness → SDK → read-only chatbot 
 | RI-009 Structured Breakdown RCA             | Phase 6 → 15 → 19                     |
 | RI-010 Canonical execution closure          | Phase 0                               |
 | RI-011 Schema deployment alignment          | Phase 1 → 14                          |
-| RI-012 PM Review serialization              | Phase 2 — pulled forward current exit-safety work → Phase 7 regression/integration verification |
+| RI-012 PM Review serialization              | Phase 2 — satisfied early / closed → Phase 7 regression/integration verification |
 | RI-013 PM cron serialization                | Phase 7                               |
 | RI-014 Breakdown serialization              | Phase 6 / 7                           |
 | RI-015 File/DB consistency                  | Phase 7 → 13                          |
@@ -2095,29 +2089,33 @@ Roadmap progress tracking does not change the required authorization boundary or
 CURRENT POSITION
 
 PHASE 2 — Historical Truth & Transaction Snapshot Foundation
-Status: ACTIVE / NEAR CLOSURE
+Status: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
 CURRENT
-PM Review finalized-record concurrency safety
-(update-vs-approve must fail closed for an execution that becomes approved)
+ADR-009 no-historical-backlog remediation
+PARTIAL — GAP DISCOVERED
+(bounded analysis/proof/plan required; implementation is not authorized)
 
 LAST CLOSED MAJOR ITEM
+RI-012 — PM Review Serialization
+CLOSED / PASS / MANAGER ACCEPTED
+
+PUBLISHED PRIOR ITEM
 ADR-007 — Transaction Snapshot Strategy
 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
-PUBLISHED CHECKPOINT
-develop / 5c2977fb18b081e80790eb92d0f42b8da06d996e
+ACCEPTED ENGINEERING CHECKPOINT
+develop / d58f7c23d7a54df3d17a3a5b678cb844f9521710
 
 CLOSED PHASES
 Phase 0 — CLOSED / PASS
 Phase 1 — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
+Phase 2 — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
 CURRENT GATE
-Manager-authorized bounded plan/proof for PM Review update-vs-approve
-concurrency safety, then Phase 2 exit-gate verification and manager closure
+Bounded ADR-009 no-historical-backlog analysis/proof/plan
 
 AFTER PHASE 2
-ADR-009 no-historical-backlog remediation
 Phase 3 activation only after manager authorization
 ```
 
@@ -2177,22 +2175,24 @@ Implementation authorization:
 NONE BY ROADMAP ALONE
 
 Current phase:
-Phase 2 — Historical Truth & Transaction Snapshot Foundation — ACTIVE / NEAR CLOSURE
+Phase 2 — Historical Truth & Transaction Snapshot Foundation — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
 Current work:
-PM Review finalized-record concurrency safety
-(update-vs-approve must fail closed for an execution that becomes approved)
+ADR-009 no-historical-backlog remediation — PARTIAL / GAP DISCOVERED
+(bounded analysis/proof/plan required; implementation is not authorized)
 
 ADR-007:
 IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
-Current Git checkpoint:
-develop / 5c2977fb18b081e80790eb92d0f42b8da06d996e / staged 0
+RI-012:
+IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / CLOSED / PASS / MANAGER ACCEPTED
+
+Accepted engineering checkpoint:
+develop / d58f7c23d7a54df3d17a3a5b678cb844f9521710 / staged 0
 
 Next management handoff:
-bounded plan/proof for PM Review update-vs-approve concurrency safety,
-then Phase 2 exit-gate verification and manager closure
+bounded analysis/proof/plan for ADR-009 no-historical-backlog remediation
 
 Next implementation authorization:
-NONE until manager decision
+NONE until explicit manager decision
 ```
