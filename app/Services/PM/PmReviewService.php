@@ -103,6 +103,18 @@ class PmReviewService
         }
 
         DB::transaction(function () use ($request, $execution, $admin, $payload): void {
+            // Re-read dan kunci execution dari database sebelum membaca item atau
+            // menulis perubahan agar status stale tidak dapat melewati lifecycle check.
+            $execution = PmExecution::query()
+                ->lockForUpdate()
+                ->findOrFail($execution->id);
+
+            if ($execution->status === 'approved') {
+                throw ValidationException::withMessages([
+                    'execution' => 'Hasil PM yang sudah approved tidak dapat diedit lagi.',
+                ]);
+            }
+
             $changes = [];
             $itemsById = $execution->items()->get()->keyBy('id');
 

@@ -17,6 +17,7 @@ use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Models\PrimeNotification;
 use App\Models\User;
+use App\Models\UserActivityLog;
 use App\Services\PM\PmReviewService;
 use DOMDocument;
 use DOMElement;
@@ -638,6 +639,159 @@ class PmReviewTest extends TestCase
             'field_name' => 'Tanggal Submit PM',
             'new_value' => $updatedSubmittedAt->format('Y-m-d H:i:00'),
         ]);
+    }
+
+    /**
+     * RI-012 R-SQLITE-1: model waiting_review yang stale tidak boleh
+     * memutasi execution yang sudah berubah menjadi approved di database.
+     */
+    public function test_stale_waiting_review_model_cannot_update_approved_execution(): void
+    {
+        $staleExecution = PmExecution::query()->findOrFail($this->execution->id);
+        $initialExecution = $this->execution->fresh();
+        $initialActionItem = $this->actionItem->fresh();
+        $initialNumberItem = $this->numberItem->fresh();
+        $initialHistoryCount = PmExecutionHistory::query()
+            ->where('pm_execution_id', $this->execution->id)
+            ->count();
+        $initialActivityCount = UserActivityLog::query()
+            ->where('module_name', 'pm_review')
+            ->where('action', 'update')
+            ->where('record_id', $this->execution->id)
+            ->count();
+
+        // Pisahkan perubahan otoritatif di database dari model yang tetap stale
+        // untuk membuktikan service tidak memakai status dari memory sebagai safety check.
+        PmExecution::query()->whereKey($this->execution->id)->update([
+            'status' => 'approved',
+            'approved_at' => now(),
+            'approved_by' => $this->admin->id,
+            'approved_by_name_snapshot' => $this->admin->name,
+        ]);
+
+        try {
+            app(PmReviewService::class)->update(
+                request: $this->s1Request(),
+                execution: $staleExecution,
+                admin: $this->admin,
+                payload: [
+                    'items' => [
+                        $this->actionItem->id => ['action_value' => 'LUBRIKASI'],
+                        $this->numberItem->id => ['number_value' => 45],
+                    ],
+                    'part_notes' => [
+                        $this->part->id => 'Catatan stale ditolak',
+                    ],
+                    'submitted_at' => now()->addHour()->format('Y-m-d\TH:i'),
+                    'change_note' => 'Update stale seharusnya ditolak',
+                    'review_note' => 'Review note stale',
+                ],
+            );
+            $this->fail('Update harus ditolak saat execution sudah approved di database.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString(
+                'approved',
+                mb_strtolower(collect($exception->errors())->flatten()->first()),
+            );
+        }
+
+        // Semua state transaksi dan side effect update harus tetap persis seperti
+        // sebelum request stale dijalankan, selain metadata approval yang memang
+        // diubah oleh simulasi authoritative update di atas.
+        $this->assertSame('approved', $this->execution->fresh()->status);
+        $this->assertSame($initialExecution->machine_code_snapshot, $this->execution->fresh()->machine_code_snapshot);
+        $this->assertSame($initialExecution->machine_name_snapshot, $this->execution->fresh()->machine_name_snapshot);
+        $this->assertSame($initialExecution->location_code_snapshot, $this->execution->fresh()->location_code_snapshot);
+        $this->assertSame($initialExecution->location_name_snapshot, $this->execution->fresh()->location_name_snapshot);
+        $this->assertSame(
+            $initialExecution->submitted_at?->toDateTimeString(),
+            $this->execution->fresh()->submitted_at?->toDateTimeString(),
+        );
+        $this->assertSame($initialExecution->review_note, $this->execution->fresh()->review_note);
+        $this->assertSame($initialActionItem->action_value, $this->actionItem->fresh()->action_value);
+        $this->assertSame($initialNumberItem->number_value, $this->numberItem->fresh()->number_value);
+        $this->assertSame($initialNumberItem->is_warning, $this->numberItem->fresh()->is_warning);
+        $this->assertSame($initialNumberItem->warning_message, $this->numberItem->fresh()->warning_message);
+        $this->assertSame($initialActionItem->note, $this->actionItem->fresh()->note);
+        $this->assertSame($initialNumberItem->note, $this->numberItem->fresh()->note);
+        $this->assertSame($initialHistoryCount, PmExecutionHistory::query()
+            ->where('pm_execution_id', $this->execution->id)
+            ->count());
+        $this->assertSame($initialActivityCount, UserActivityLog::query()
+            ->where('module_name', 'pm_review')
+            ->where('action', 'update')
+            ->where('record_id', $this->execution->id)
+            ->count());
+    }
+
+    /**
+     * RI-012 R-SQLITE-2: request update langsung pada execution approved harus
+     * ditolak tanpa mengubah field transaksi atau menambah evidence update.
+     */
+    public function test_approved_execution_update_is_rejected_without_mutation(): void
+    {
+        $this->execution->update([
+            'status' => 'approved',
+            'approved_at' => now(),
+            'approved_by' => $this->admin->id,
+            'approved_by_name_snapshot' => $this->admin->name,
+        ]);
+        $this->scheduleDate->update(['status' => 'approved']);
+
+        $initialExecution = $this->execution->fresh();
+        $initialActionItem = $this->actionItem->fresh();
+        $initialNumberItem = $this->numberItem->fresh();
+        $initialHistoryCount = PmExecutionHistory::query()
+            ->where('pm_execution_id', $this->execution->id)
+            ->count();
+        $initialActivityCount = UserActivityLog::query()
+            ->where('module_name', 'pm_review')
+            ->where('action', 'update')
+            ->where('record_id', $this->execution->id)
+            ->count();
+
+        // Jalur HTTP memakai payload valid agar rejection berasal dari lifecycle
+        // approved, bukan dari validasi field atau authorization.
+        $response = $this->from("/pm/review/{$this->execution->id}")
+            ->actingAs($this->admin)
+            ->put("/pm/review/{$this->execution->id}", [
+                'items' => [
+                    $this->actionItem->id => ['action_value' => 'LUBRIKASI'],
+                    $this->numberItem->id => ['number_value' => 45],
+                ],
+                'part_notes' => [
+                    $this->part->id => 'Catatan approved ditolak',
+                ],
+                'submitted_at' => now()->addHour()->format('Y-m-d\TH:i'),
+                'change_note' => 'Update approved seharusnya ditolak',
+                'review_note' => 'Review note approved',
+            ]);
+
+        $response->assertRedirect("/pm/review/{$this->execution->id}");
+        $response->assertSessionHasErrors('execution');
+
+        // Rejection tidak boleh mengubah execution, item, history, atau activity log.
+        $this->assertSame($initialExecution->machine_code_snapshot, $this->execution->fresh()->machine_code_snapshot);
+        $this->assertSame($initialExecution->machine_name_snapshot, $this->execution->fresh()->machine_name_snapshot);
+        $this->assertSame($initialExecution->location_code_snapshot, $this->execution->fresh()->location_code_snapshot);
+        $this->assertSame($initialExecution->location_name_snapshot, $this->execution->fresh()->location_name_snapshot);
+        $this->assertSame('approved', $this->execution->fresh()->status);
+        $this->assertSame($initialExecution->submitted_at?->toDateTimeString(), $this->execution->fresh()->submitted_at?->toDateTimeString());
+        $this->assertSame($initialExecution->review_note, $this->execution->fresh()->review_note);
+        $this->assertSame($initialActionItem->action_value, $this->actionItem->fresh()->action_value);
+        $this->assertSame($initialNumberItem->number_value, $this->numberItem->fresh()->number_value);
+        $this->assertSame($initialNumberItem->is_warning, $this->numberItem->fresh()->is_warning);
+        $this->assertSame($initialNumberItem->warning_message, $this->numberItem->fresh()->warning_message);
+        $this->assertSame($initialActionItem->note, $this->actionItem->fresh()->note);
+        $this->assertSame($initialNumberItem->note, $this->numberItem->fresh()->note);
+        $this->assertSame($initialHistoryCount, PmExecutionHistory::query()
+            ->where('pm_execution_id', $this->execution->id)
+            ->count());
+        $this->assertSame($initialActivityCount, UserActivityLog::query()
+            ->where('module_name', 'pm_review')
+            ->where('action', 'update')
+            ->where('record_id', $this->execution->id)
+            ->count());
     }
 
     public function test_machine_landing_uses_updated_submitted_at_after_pm_review_edit(): void
