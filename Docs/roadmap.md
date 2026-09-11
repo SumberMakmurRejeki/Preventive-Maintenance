@@ -2,8 +2,8 @@
 
 **Project:** PRIME — Preventive Maintenance System
 **Canonical document:** `Docs/roadmap.md`
-**Last synchronized:** 2026-09-10
-**Accepted engineering checkpoint:** `develop @ d58f7c23d7a54df3d17a3a5b678cb844f9521710`
+**Last synchronized:** 2026-09-11
+**Accepted engineering checkpoint:** `develop @ ba0bfd53baf06e46a0a1b25763789294dba91b7f`
 **Authorization:** Roadmap tracking does not authorize implementation, commits, or deployment.
 
 ## Posisi Saat Ini
@@ -11,11 +11,11 @@
 **Phase 2 — Historical Truth & Transaction Snapshot Foundation**
 
 **CURRENT:**
-- ADR-009 — no-historical-backlog remediation — **PARTIAL — GAP DISCOVERED**.
-- Bounded analysis/proof/plan is required before implementation; this status does not authorize implementation.
+- ADR-009 — No-Historical-Backlog Prevention / Slice A — **COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED**.
+- ADR-009 overall remains **PARTIAL**; remaining planning and lifecycle scope stays future/deferred.
 
 **NEXT:**
-- Manager decision on the bounded ADR-009 analysis/proof/plan and any later implementation authorization.
+- Manager decision on **Phase 3 / ADR-010 activation**. No further ADR-009 Slice-A coding is pending.
 
 **AFTER:**
 - Phase 3 activation only after explicit manager authorization.
@@ -42,10 +42,9 @@ Each entry uses **Sudah**, **Saat ini**, **Belum**, and **Next**. A task may be 
   - Slice 1 — DONE
   - Slice 2 — DONE
   - Slice 3 — DONE
-- **Sudah:** Live operational-window foundation exists.
-- **Saat ini:** None. ADR-009 separation gap remains ahead of this work.
+- **Saat ini:** None. The ADR-009 no-historical-backlog dependency is satisfied by accepted Slice A.
 - **Belum:** Historical/manual PM source, provenance, performed/entered identity, and live-workflow isolation.
-- **Next:** Resolve ADR-009 no-historical-backlog gap, then plan historical PM.
+- **Next:** Plan Historical PM only after the remaining prerequisites and explicit roadmap authorization.
 
 ### ADR-002 — PM Option Catalog
 
@@ -134,16 +133,19 @@ Each entry uses **Sudah**, **Saat ini**, **Belum**, and **Next**. A task may be 
 
 ### ADR-009 — Operational Window & Planning
 
-**Status: PARTIAL — GAP DISCOVERED**
+**Status: PARTIAL — Slice A COMPLETE / ACCEPTED**
 
 - **TASK-002 [SHARED]**
   - Slice 1 — DONE
   - Slice 2 — DONE
   - Slice 3 — DONE
-- **Sudah:** `operational_from`, Asia/Jakarta `BusinessDate`, planning-period foundation, 12-calendar-month default, and legacy-NULL fail-closed behavior.
-- **Saat ini:** **Current next management work:** no-historical-backlog remediation.
-- **Belum:** Past `operational_from` can materialize historical live occurrences; no-backlog remediation, global setting, rolling extension, idempotency, decrease policy, and lifecycle integration remain.
-- **Next:** Bounded ADR-009 analysis/proof/plan. Do not mark complete or reopen TASK-002; implementation is not authorized by this status.
+- **Slice A — COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED.**
+- **Engineering checkpoint:** `ba0bfd53baf06e46a0a1b25763789294dba91b7f` (`fix: prevent historical PM backlog materialization`).
+- **Sudah:** `operational_from`, Asia/Jakarta `BusinessDate`, planning-period foundation, 12-calendar-month default, legacy-NULL fail-closed behavior, and no-historical-backlog prevention.
+- **Saat ini:** No ADR-009 Slice-A implementation remains pending.
+- **Belum:** Global planning-period configuration where applicable, rolling extension, planning-period decrease policy, lifecycle integration with ADR-010, and other documented future ADR-009 scope.
+- **Existing-row remediation:** No automatic cleanup was implemented; existing historical rows are preserved. The development database was fresh, so no current remediation was required. Any future remediation requires an explicit policy.
+- **Next:** Defer remaining ADR-009 scope until separately authorized; do not reopen TASK-002 or reintroduce Slice A as pending work.
 
 ### ADR-010 — Schedule & Machine Lifecycle
 
@@ -158,8 +160,7 @@ Each entry uses **Sudah**, **Saat ini**, **Belum**, and **Next**. A task may be 
 ## Shared TASK Mappings
 
 - **TASK-001:** ADR-005 — completed.
-- **TASK-002 [SHARED]:** ADR-001, ADR-006, ADR-009 — CLOSED / PASS; ADR-009 remains PARTIAL because of the newly discovered gap.
-- **TASK-003:** ADR-003 — Slices 1–6 CLOSED / PASS.
+- **TASK-002 [SHARED] — CLOSED / PASS:** mapped to ADR-001, ADR-006, and ADR-009 Slice A; ADR-009 overall remains PARTIAL and remaining scope is future/deferred.
 - **TASK-004:** ADR-004 — Slices 1–3 CLOSED / MANAGER ACCEPTED.
 - **TASK-005 [SHARED]:** ADR-004 supporting fake-storage/test-isolation task — CLOSED / PASS / MANAGER ACCEPTED.
 
@@ -378,16 +379,16 @@ RI-012 — PM Review Serialization:
 CLOSED / PASS / MANAGER ACCEPTED
 
 Accepted engineering checkpoint:
-develop / d58f7c23d7a54df3d17a3a5b678cb844f9521710
+develop / ba0bfd53baf06e46a0a1b25763789294dba91b7f
 
 Current management sequence:
-ADR-009 no-historical-backlog remediation
-(bounded analysis/proof/plan required; implementation is not authorized)
+ADR-009 Slice A — No-Historical-Backlog Prevention
+COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED
+ADR-009 overall remains PARTIAL; remaining scope is future/deferred
 ↓
-Phase 3 activation only after manager authorization
-```
+Manager decision on Phase 3 / ADR-010 activation
 
-RI-012 proof is closed and must not be repeated without causal regression evidence. Do not reopen ADR-007 for this gap or TASK-002 for the ADR-009 gap.
+RI-012 proof is closed and must not be repeated without causal regression evidence. Do not reopen ADR-007 or TASK-002 for completed Slice A work.
 
 No commit execution is authorized by this roadmap update alone.
 
@@ -701,9 +702,9 @@ Phase 1 exit gate: **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07**
 # PHASE 2 — Historical Truth & Transaction Snapshot Foundation
 **Status: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**
 
-**Current work:** ADR-009 no-historical-backlog remediation — **PARTIAL — GAP DISCOVERED**.
+**Current work:** ADR-009 Slice A — No-Historical-Backlog Prevention — **COMPLETE / ACCEPTED / MANAGER ACCEPTED**. ADR-009 overall remains **PARTIAL**.
 
-**Next gate:** Bounded ADR-009 analysis/proof/plan; implementation requires explicit manager authorization.
+**Next gate:** Manager decision on Phase 3 / ADR-010 activation. Remaining ADR-009 scope is future/deferred.
 
 
 ## Objective
@@ -864,18 +865,24 @@ Yang wajib hanya:
 
 ## 3.4 ADR-009 Planning Follow-Up
 
-Implement/decide:
+**Already satisfied foundation:**
+
+- No-Historical-Backlog Prevention — **COMPLETE / ACCEPTED**.
+- Asia/Jakarta `BusinessDate` foundation — **IMPLEMENTED / VERIFIED**.
+
+**Remaining ADR-009 follow-up:**
 
 ```text
 global planning period
 rolling extension
-idempotency
-planning-window decrease
-no historical backlog
-Asia/Jakarta business date
+rolling-extension idempotency
+planning-window decrease policy
+lifecycle integration with ADR-010
+other already-documented unresolved planning follow-up
 ```
 
 Planning extension tidak boleh bypass paused/ended/retired semantics.
+The Phase 3 exit invariant remains **No catch-up backlog**; it is not pending Slice-A implementation.
 
 ## Exit Gate
 
@@ -2092,20 +2099,20 @@ PHASE 2 — Historical Truth & Transaction Snapshot Foundation
 Status: CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
 CURRENT
-ADR-009 no-historical-backlog remediation
-PARTIAL — GAP DISCOVERED
-(bounded analysis/proof/plan required; implementation is not authorized)
+ADR-009 Slice A — No-Historical-Backlog Prevention
+COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED
+ADR-009 overall: PARTIAL
 
 LAST CLOSED MAJOR ITEM
-RI-012 — PM Review Serialization
-CLOSED / PASS / MANAGER ACCEPTED
+ADR-009 Slice A — No-Historical-Backlog Prevention
+COMPLETE / ACCEPTED / MANAGER ACCEPTED
 
 PUBLISHED PRIOR ITEM
 ADR-007 — Transaction Snapshot Strategy
 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
 ACCEPTED ENGINEERING CHECKPOINT
-develop / d58f7c23d7a54df3d17a3a5b678cb844f9521710
+develop / ba0bfd53baf06e46a0a1b25763789294dba91b7f
 
 CLOSED PHASES
 Phase 0 — CLOSED / PASS
@@ -2113,10 +2120,10 @@ Phase 1 — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 Phase 2 — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
 CURRENT GATE
-Bounded ADR-009 no-historical-backlog analysis/proof/plan
+Manager decision on Phase 3 / ADR-010 activation
 
 AFTER PHASE 2
-Phase 3 activation only after manager authorization
+Phase 3 remains NOT STARTED and requires explicit manager authorization
 ```
 
 No Git index mutation or commit is authorized by this roadmap update alone.
@@ -2178,8 +2185,9 @@ Current phase:
 Phase 2 — Historical Truth & Transaction Snapshot Foundation — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
 Current work:
-ADR-009 no-historical-backlog remediation — PARTIAL / GAP DISCOVERED
-(bounded analysis/proof/plan required; implementation is not authorized)
+ADR-009 Slice A — No-Historical-Backlog Prevention
+COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED
+ADR-009 overall: PARTIAL; remaining scope is future/deferred
 
 ADR-007:
 IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
@@ -2188,10 +2196,10 @@ RI-012:
 IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / CLOSED / PASS / MANAGER ACCEPTED
 
 Accepted engineering checkpoint:
-develop / d58f7c23d7a54df3d17a3a5b678cb844f9521710 / staged 0
+develop / ba0bfd53baf06e46a0a1b25763789294dba91b7f / staged 0
 
 Next management handoff:
-bounded analysis/proof/plan for ADR-009 no-historical-backlog remediation
+Manager decision on Phase 3 / ADR-010 activation
 
 Next implementation authorization:
 NONE until explicit manager decision

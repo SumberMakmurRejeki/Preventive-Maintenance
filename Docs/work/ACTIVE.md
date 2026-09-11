@@ -1,14 +1,14 @@
 # Active Work
 
-**Last Updated:** 2026-09-10
+**Last Updated:** 2026-09-11
 
 **Roadmap Phase:** Phase 2 — Historical Truth & Transaction Snapshot Foundation (**CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**)
 **Authoritative Roadmap:** `Docs/roadmap.md`
-**Current Work:** ADR-009 no-historical-backlog remediation (**PARTIAL — GAP DISCOVERED**)
+**Current Work:** Manager gate for **Phase 3 / ADR-010 activation**
 **Status:** Phase 2 **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**
-**Last Closed Major Item:** RI-012 — PM Review Serialization (**CLOSED / PASS / MANAGER ACCEPTED**)
-**Accepted Engineering Checkpoint:** `d58f7c23d7a54df3d17a3a5b678cb844f9521710`
-**Next Action:** Bounded ADR-009 analysis/proof/plan; implementation requires explicit manager authorization.
+**Last Closed Major Item:** ADR-009 Slice A — No-Historical-Backlog Prevention (**COMPLETE / ACCEPTED / MANAGER ACCEPTED**)
+**Accepted Engineering Checkpoint:** `ba0bfd53baf06e46a0a1b25763789294dba91b7f`
+**Next Action:** Manager decision on Phase 3 / ADR-010 activation; no further ADR-009 Slice-A coding is pending.
 **After:** Phase 3 remains **NOT STARTED** and requires explicit manager authorization.
 
 ADR-007 remains closed / pass / manager accepted / published. TASK-002 remains closed. Phase 3 is not started and is not activated by this handoff.
@@ -60,15 +60,17 @@ R4 NULL/manual control tidak berlaku karena current FK adalah NOT NULL.
 
 ## Current Handoff
 
-**Current Work:** ADR-009 no-historical-backlog remediation (**PARTIAL — GAP DISCOVERED**).
+**Current Work:** Manager gate for **Phase 3 / ADR-010 activation**.
 
-**Implementation status:** RI-012 PM Review serialization is implemented, verified, independently reviewed, manager accepted, and closed. Phase 2 exit gate passed and was manager accepted.
+**Last completed and accepted item:** ADR-009 Slice A — No-Historical-Backlog Prevention (**COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED**). ADR-009 overall remains **PARTIAL**.
 
-**Accepted evidence:** authoritative locked re-read; SQLite regression PASS; MySQL R1/R2/R3 PASS; final independent review PASS.
+**Implementation status:** Slice A is implemented, verified, independently reviewed, manager accepted, and recorded at engineering checkpoint `ba0bfd53baf06e46a0a1b25763789294dba91b7f`. Phase 2 exit gate passed and was manager accepted.
 
-**Next Action:** Bounded ADR-009 analysis/proof/plan; implementation is not authorized by this handoff.
+**Accepted evidence:** Direct execution-writer **3 passed / 22 assertions**; `PmExecutorTest` **55 passed / 265 assertions**; targeted ADR-009 Slice A **129 passed / 538 assertions**; PHP lint, Pint, and diff checks passed; independent review passed.
 
-**Canonical roadmap synchronization:** `Docs/roadmap.md` remains authoritative. ADR-007 and TASK-002 remain closed; Phase 3 is not started.
+**Next Action:** Manager decision on Phase 3 / ADR-010 activation. Remaining ADR-009 scope is future/deferred; implementation is not authorized by this handoff.
+
+**Canonical roadmap synchronization:** `Docs/roadmap.md` remains authoritative. ADR-009 overall remains PARTIAL, TASK-002 remains closed, and Phase 3 is not started.
 
 ### Current closure checkpoint
 
@@ -76,11 +78,13 @@ ADR-007: **IMPLEMENTED / VERIFIED / CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
 RI-012: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / CLOSED / PASS / MANAGER ACCEPTED — 2026-09-10**.
 
+ADR-009 Slice A: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / MANAGER ACCEPTED — engineering checkpoint `ba0bfd53baf06e46a0a1b25763789294dba91b7f`**.
+
 Historical proof used mutable Machine name and Location name changes. `machine_code` rename proof is not claimed because it is immutable under the current PRIME contract.
 
 ### Accepted engineering checkpoint
 
-Accepted engineering checkpoint: `d58f7c23d7a54df3d17a3a5b678cb844f9521710`; staged files `0`; ambient work remains intentionally dirty and uncommitted.
+Accepted engineering checkpoint: `ba0bfd53baf06e46a0a1b25763789294dba91b7f`; staged files `0`; ambient work remains intentionally dirty and uncommitted.
 
 ### Historical TASK-004 verification sections
 

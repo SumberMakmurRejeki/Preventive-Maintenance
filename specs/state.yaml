@@ -10,14 +10,14 @@ session:
 handoff:
   next_skill: null
   story_id: null
-  status: "Phase 2 CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — RI-012 CLOSED / PASS / MANAGER ACCEPTED; ADR-009 PARTIAL — GAP DISCOVERED"
-  updated_at: "2026-09-10"
-  next_action: "Bounded ADR-009 no-historical-backlog analysis/proof/plan; implementation is not authorized"
-  task_status: "Phase 2 CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — current work is ADR-009 no-historical-backlog remediation"
-  adr_status: "RI-012 CLOSED / PASS / MANAGER ACCEPTED; ADR-007 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED; ADR-009 PARTIAL — GAP DISCOVERED"
+  status: "Phase 2 CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — RI-012 CLOSED / PASS / MANAGER ACCEPTED; ADR-009 Slice A ACCEPTED; ADR-009 overall PARTIAL"
+  updated_at: "2026-09-11"
+  next_action: "Manager decision on Phase 3 / ADR-010 activation; no further ADR-009 Slice-A coding is pending"
+  task_status: "Phase 2 CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — ADR-009 Slice A accepted; current manager gate is Phase 3 / ADR-010 activation"
+  adr_status: "RI-012 CLOSED / PASS / MANAGER ACCEPTED; ADR-007 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 PARTIAL"
   planning_document: null
   correction_report: null
-  blocker: "None for Phase 2; ADR-009 is the next known roadmap gap, not a Phase 2 blocker"
+  blocker: "None for Phase 2 or accepted ADR-009 Slice A; Phase 3 activation requires explicit manager authorization"
 
 planning:
   risk: null
@@ -30,16 +30,16 @@ planning:
 git:
   branch: develop
   # `head` records the accepted engineering checkpoint; tracking closure follows in a separate commit.
-  head: "d58f7c23d7a54df3d17a3a5b678cb844f9521710"
+  head: "ba0bfd53baf06e46a0a1b25763789294dba91b7f"
   dirty_checkpoint_expected: true
   staged_file_count: 0
   staged_checkpoint_sha256: null
 
 verification:
-  status: "PASS — RI-012 verified, independently reviewed, manager accepted, and closed; Phase 2 exit gate passed"
-  application_tests: "PmReviewTest: 29 passed / 297 assertions"
-  database_mutation: "RI-012 MySQL R1/R2/R3 proof previously passed; no MySQL re-proof performed in this closure"
+  status: "PASS — ADR-009 Slice A implemented, verified, independently reviewed, and manager accepted; Phase 2 exit gate passed"
+  application_tests: "Direct execution-writer: 3 passed / 22 assertions; PmExecutorTest: 55 passed / 265 assertions; targeted ADR-009 Slice A: 129 passed / 538 assertions"
+  database_mutation: "No database mutation performed in tracking closure; accepted Slice-A verification preserved existing historical rows"
   canonical_unique_index_present: true
   r3: PASS
   documentation_validation: PASS
-  remaining_risks: "ADR-009 no-historical-backlog gap remains the next bounded analysis/proof/plan; no Phase 2 blocker"
+  remaining_risks: "ADR-009 global planning, rolling extension, planning-decrease policy, and ADR-010 lifecycle integration remain future/deferred; no Phase 2 blocker"
