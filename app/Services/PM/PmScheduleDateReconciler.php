@@ -5,6 +5,7 @@ namespace App\Services\PM;
 use App\Models\Machine;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -13,6 +14,10 @@ class PmScheduleDateReconciler
     // Status occurrence yang boleh direconcile. Sumber tunggal untuk
     // klasifikasi protected/mutable pada reconciliation dan preview.
     public const MUTABLE_STATUSES = ['scheduled', 'overdue', 'missed'];
+
+    public function __construct(
+        private readonly PlanningPeriodPolicy $planningPeriodPolicy,
+    ) {}
 
     /**
      * @return array{examined: int, created: int, restored: int, removed: int, unchanged: int, conflicts: int, unresolved?: bool}
@@ -75,14 +80,22 @@ class PmScheduleDateReconciler
     private function evaluate(PmSchedule $schedule, bool $apply): array
     {
         $machineId = (int) $schedule->checksheetMachine()->firstOrFail()->machine_id;
+        $materializationStart = $this->planningPeriodPolicy->materializationStart($schedule->operational_from);
+        // Generasi dimulai dari start_date efektif (start_date eksplisit atau
+        // batas materialisasi), sehingga start_date yang lebih baru dihormati.
+        $generationStart = $this->planningPeriodPolicy->generationStart(
+            $schedule->start_date ? Carbon::parse($schedule->start_date) : null,
+            $materializationStart,
+        );
         $desiredDates = PmScheduleDateGenerator::generate([
             'frequency_type' => $schedule->frequency_type,
             'weekly_days' => $schedule->weekly_days,
             'monthly_day' => $schedule->monthly_day,
-            'start_date' => $schedule->start_date,
+            'start_date' => $generationStart?->toDateString(),
             'generate_until' => $schedule->generate_until,
         ]);
         $missingDates = array_fill_keys($desiredDates, true);
+
         $dateRowsQuery = PmScheduleDate::query()
             ->withTrashed()
             ->where('pm_schedule_id', $schedule->id)
@@ -103,6 +116,13 @@ class PmScheduleDateReconciler
 
         foreach ($dateRows as $dateRow) {
             $date = $dateRow->scheduled_date->toDateString();
+
+            // Baris sebelum batas materialisasi dipertahankan apa adanya:
+            // Slice A mencegah backlog baru, bukan menghapus/menggeser histori.
+            if ($materializationStart !== null && $dateRow->scheduled_date->lt($materializationStart)) {
+                continue;
+            }
+
             $isDesired = isset($missingDates[$date]);
             $isMutable = in_array($dateRow->status, self::MUTABLE_STATUSES, true)
                 && (int) $dateRow->executions_with_trashed_count === 0;

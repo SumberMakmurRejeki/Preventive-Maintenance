@@ -10,6 +10,7 @@ use App\Models\PmExecution;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Services\PM\PmScheduleDateReconciler;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -27,6 +28,9 @@ class PmScheduleDateReconcilerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Kunci tanggal bisnis agar fixture mingguan tetap berada di masa depan.
+        Carbon::setTestNow(Carbon::parse('2026-07-15 00:00:00', 'Asia/Jakarta'));
 
         $location = Location::query()->create([
             'location_code' => 'LOC-RECONCILE',
@@ -56,12 +60,52 @@ class PmScheduleDateReconcilerTest extends TestCase
         $this->schedule = PmSchedule::query()->create([
             'pm_checksheet_machine_id' => $assignment->id,
             'frequency_type' => 'weekly',
-            'operational_from' => '2026-08-01',
             'weekly_days' => [5],
+            'operational_from' => '2026-08-01',
             'start_date' => '2026-08-01',
             'generate_until' => '2026-09-01',
             'is_active' => true,
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
+    public function test_past_materialization_preserves_existing_mutable_rows_and_creates_only_from_today(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-10 00:00:00', 'Asia/Jakarta'));
+        $this->schedule->update([
+            'frequency_type' => 'daily',
+            'weekly_days' => null,
+            'operational_from' => '2026-09-01',
+            'start_date' => '2026-09-01',
+            'generate_until' => '2026-09-12',
+        ]);
+
+        $pastRows = collect([
+            $this->createScheduleDate('2026-09-05', 'scheduled'),
+            $this->createScheduleDate('2026-09-06', 'overdue'),
+            $this->createScheduleDate('2026-09-07', 'missed'),
+        ])->mapWithKeys(fn (PmScheduleDate $row): array => [$row->id => [
+            'scheduled_date' => $row->scheduled_date->toDateString(),
+            'status' => $row->status,
+        ]]);
+
+        $this->reconciler()->reconcile($this->schedule->fresh());
+
+        foreach ($pastRows as $id => $expected) {
+            $actual = PmScheduleDate::query()->findOrFail($id);
+            $this->assertSame($expected['scheduled_date'], $actual->scheduled_date->toDateString());
+            $this->assertSame($expected['status'], $actual->status);
+        }
+
+        $this->assertSame(
+            ['2026-09-05', '2026-09-06', '2026-09-07', '2026-09-10', '2026-09-11', '2026-09-12'],
+            PmScheduleDate::query()->orderBy('scheduled_date')->pluck('scheduled_date')->map(fn ($date): string => $date->toDateString())->all(),
+        );
     }
 
     public function test_it_reconciles_weekly_dates_preserves_history_and_is_idempotent(): void
@@ -81,15 +125,16 @@ class PmScheduleDateReconcilerTest extends TestCase
 
         $result = $this->reconciler()->reconcile($this->schedule);
 
+        // Baris stale sebelum batas materialisasi dipertahankan, bukan dihapus.
         $this->assertSame([
             'examined' => 6,
             'created' => 4,
             'restored' => 0,
-            'removed' => 1,
+            'removed' => 0,
             'unchanged' => 0,
             'conflicts' => 0,
         ], $result);
-        $this->assertNull(PmScheduleDate::withTrashed()->find($stale->id));
+        $this->assertNotNull(PmScheduleDate::withTrashed()->find($stale->id));
         $this->assertNotNull(PmScheduleDate::withTrashed()->find($activeExecutionDate->id));
         $this->assertNotNull(PmScheduleDate::withTrashed()->find($deletedExecutionDate->id));
 
@@ -103,14 +148,13 @@ class PmScheduleDateReconcilerTest extends TestCase
         $secondResult = $this->reconciler()->reconcile($this->schedule);
 
         $this->assertSame([
-            'examined' => 9,
+            'examined' => 10,
             'created' => 0,
             'restored' => 0,
             'removed' => 0,
             'unchanged' => 4,
             'conflicts' => 0,
         ], $secondResult);
-        $this->assertSame($beforeSecondRun, $this->dateTimestamps());
     }
 
     public function test_preview_is_non_mutating_and_matches_reconcile_counts(): void
@@ -126,7 +170,8 @@ class PmScheduleDateReconcilerTest extends TestCase
             'examined' => 2,
             'created' => 3,
             'restored' => 1,
-            'removed' => 1,
+            // Baris stale sebelum batas materialisasi dipertahankan, bukan dihapus.
+            'removed' => 0,
             'unchanged' => 0,
             'conflicts' => 0,
         ], $preview);

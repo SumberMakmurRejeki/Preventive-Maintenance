@@ -80,12 +80,25 @@ class PmScheduleUpdateService
         // Hitung jendela operasional: start_date dan generate_until.
         $window = $this->resolveWindow($schedulePayload, $businessToday);
 
+        // Batas materialisasi Slice A: max(operational_from, BusinessDate::today()).
+        // Tanggal sebelum batas ini tidak boleh dilaporkan sebagai creates.
+        $materializationStart = $this->planningPeriodPolicy->materializationStart(
+            Carbon::parse($schedulePayload['operational_from'])->startOfDay(),
+            $businessToday,
+        );
+
+        // Tanggal desired mulai dari start_date efektif atau batas materialisasi.
+        $generationStart = $this->planningPeriodPolicy->generationStart(
+            $window['start_date'] !== null ? Carbon::parse($window['start_date']) : null,
+            $materializationStart,
+        );
+
         // Hasilkan kumpulan tanggal yang DIINGINKAN dari payload baru.
         $desiredDates = PmScheduleDateGenerator::generate([
             'frequency_type' => $schedulePayload['frequency_type'],
             'weekly_days' => $schedulePayload['weekly_days'] ?? [],
             'monthly_day' => $schedulePayload['monthly_day'] ?? null,
-            'start_date' => $window['start_date'],
+            'start_date' => $generationStart?->toDateString(),
             'generate_until' => $window['generate_until'],
         ]);
         $desiredSet = array_fill_keys($desiredDates, true);
@@ -117,6 +130,13 @@ class PmScheduleUpdateService
             foreach ($assignment->schedules as $schedule) {
                 foreach ($schedule->scheduleDates as $dateRow) {
                     $dateStr = $dateRow->scheduled_date->toDateString();
+
+                    // Baris sebelum batas materialisasi dipertahankan apa adanya:
+                    // Slice A mencegah backlog baru, bukan menghapus/menggeser histori.
+                    if ($dateRow->scheduled_date->lt($materializationStart)) {
+                        continue;
+                    }
+
                     $isDesired = isset($desiredSet[$dateStr]);
 
                     // Aturan proteksi sama dengan reconciler: mutable hanya jika

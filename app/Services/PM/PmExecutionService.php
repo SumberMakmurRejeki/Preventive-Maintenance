@@ -27,6 +27,7 @@ class PmExecutionService
         protected PmExecutionMediaService $mediaService,
         protected ActivityLogService $activityLogService,
         protected AdminNotificationService $notificationService,
+        protected PlanningPeriodPolicy $planningPeriodPolicy,
     ) {}
 
     /**
@@ -508,6 +509,27 @@ class PmExecutionService
         }
 
         $cursor = $afterDate->copy()->addDay()->startOfDay();
+
+        // Batas materialisasi menjadi syarat wajib; NULL legacy tidak boleh
+        // diteruskan ke recurrence scan karena status unresolved harus fail-closed.
+        $materializationStart = $this->planningPeriodPolicy->materializationStart($schedule->operational_from);
+        if ($materializationStart === null) {
+            return null;
+        }
+
+        // Writer mengikuti batas paling akhir antara materialisasi dan start_date
+        // eksplisit agar tidak membuat occurrence sebelum jadwal benar-benar dimulai.
+        $generationStart = $this->planningPeriodPolicy->generationStart(
+            $schedule->start_date,
+            $materializationStart,
+        );
+        if ($generationStart === null) {
+            return null;
+        }
+
+        if ($cursor->lt($generationStart)) {
+            $cursor = $generationStart->copy();
+        }
 
         while ($cursor->lte($generateUntil)) {
             $shouldInclude = false;

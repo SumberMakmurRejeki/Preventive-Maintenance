@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\UserActivityLog;
 use App\Services\Master\PmChecksheetService;
 use App\Services\PM\PmScheduleDateReconciler;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
@@ -31,6 +32,9 @@ class PmChecksheetScheduleReconciliationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Kunci tanggal bisnis agar fixture rekonsiliasi tetap deterministik.
+        Carbon::setTestNow(Carbon::parse('2026-07-15 00:00:00', 'Asia/Jakarta'));
 
         $this->admin = User::query()->create([
             'name' => 'Admin PRIME',
@@ -53,6 +57,12 @@ class PmChecksheetScheduleReconciliationTest extends TestCase
         ]);
     }
 
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     public function test_preview_is_scoped_and_does_not_write_schedule_dates(): void
     {
         $checksheet = $this->createChecksheet();
@@ -64,7 +74,8 @@ class PmChecksheetScheduleReconciliationTest extends TestCase
 
         $this->assertSame(1, $preview['selected']);
         $this->assertSame(4, $preview['totals']['created']);
-        $this->assertSame(1, $preview['totals']['removed']);
+        // Baris sebelum batas materialisasi dipertahankan, bukan dihapus.
+        $this->assertSame(0, $preview['totals']['removed']);
         $this->assertSame(0, $preview['totals']['conflicts']);
         $this->assertSame(1, PmScheduleDate::withTrashed()->where('pm_schedule_id', $schedule->id)->count());
         $this->assertSame(0, PmScheduleDate::withTrashed()->where('pm_schedule_id', $otherSchedule->id)->count());

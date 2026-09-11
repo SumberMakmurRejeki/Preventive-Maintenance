@@ -31,4 +31,37 @@ class PlanningPeriodPolicy
             'planning_end' => $planningStart->copy()->addMonthsNoOverflow($this->initialMonths()),
         ];
     }
+
+    /**
+     * Menentukan tanggal paling awal materialisasi occurrence live.
+     * Nilai NULL mempertahankan jalur legacy unresolved tanpa fallback.
+     */
+    public function materializationStart(?Carbon $operationalFrom, ?Carbon $businessToday = null): ?Carbon
+    {
+        if ($operationalFrom === null) {
+            return null;
+        }
+
+        $today = $businessToday?->copy()->startOfDay() ?? BusinessDate::today();
+
+        return $operationalFrom->copy()->startOfDay()->max($today);
+    }
+
+    /**
+     * Batas awal generasi tanggal desired: start_date eksplisit atau batas
+     * materialisasi, mana yang lebih baru. Memastikan start_date yang lebih
+     * baru dari operational_from tetap dihormati tanpa materialisasi backlog.
+     */
+    public function generationStart(?Carbon $startDate, ?Carbon $materializationStart): ?Carbon
+    {
+        if ($startDate === null) {
+            return $materializationStart?->copy();
+        }
+
+        if ($materializationStart === null) {
+            return $startDate->copy();
+        }
+
+        return $startDate->copy()->startOfDay()->max($materializationStart);
+    }
 }

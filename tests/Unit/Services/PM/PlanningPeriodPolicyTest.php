@@ -54,4 +54,28 @@ class PlanningPeriodPolicyTest extends TestCase
         // Dengan overflow biasa nilainya akan melompat ke 1 Mar.
         $this->assertSame('2025-02-28', $window['planning_end']->toDateString());
     }
+
+    public function test_materialization_start_clamps_past_operational_from_to_business_today(): void
+    {
+        $businessToday = Carbon::parse('2026-09-10', 'Asia/Jakarta')->startOfDay();
+        $operationalFrom = Carbon::parse('2026-09-01', 'Asia/Jakarta')->startOfDay();
+
+        $this->assertSame('2026-09-10', $this->policy->materializationStart($operationalFrom, $businessToday)?->toDateString());
+    }
+
+    public function test_materialization_start_preserves_today_and_future_boundaries(): void
+    {
+        $businessToday = Carbon::parse('2026-09-10', 'Asia/Jakarta')->startOfDay();
+
+        $this->assertSame('2026-09-10', $this->policy->materializationStart($businessToday, $businessToday)?->toDateString());
+        $this->assertSame('2026-09-15', $this->policy->materializationStart(
+            Carbon::parse('2026-09-15', 'Asia/Jakarta')->startOfDay(),
+            $businessToday,
+        )?->toDateString());
+    }
+
+    public function test_materialization_start_is_unresolved_for_legacy_null(): void
+    {
+        $this->assertNull($this->policy->materializationStart(null));
+    }
 }

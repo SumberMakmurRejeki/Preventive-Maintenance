@@ -17,10 +17,12 @@ use App\Models\PmScheduleDate;
 use App\Models\User;
 use App\Services\Auth\ActivityLogService;
 use App\Services\Notification\AdminNotificationService;
+use App\Services\PM\PlanningPeriodPolicy;
 use App\Services\PM\PmExecutionMediaService;
 use App\Services\PM\PmExecutionService;
 use App\Services\PM\PmScheduleDateReconciler;
 use App\Services\PM\PmWarningService;
+use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -53,6 +55,13 @@ class PmExecutorTest extends TestCase
     protected PmChecksheetStandard $numberStandard;
 
     protected PmChecksheetStandard $rangeStandard;
+
+    protected function tearDown(): void
+    {
+        // Mengembalikan waktu Carbon agar fixture test lain tidak terpengaruh.
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
 
     protected function setUp(): void
     {
@@ -140,6 +149,7 @@ class PmExecutorTest extends TestCase
 
         $schedule = PmSchedule::query()->create([
             'pm_checksheet_machine_id' => $checksheetMachine->id,
+            'operational_from' => now()->subDay()->toDateString(),
             'frequency_type' => 'daily',
             'start_date' => now()->subDay()->toDateString(),
             'generate_until' => now()->addMonth()->toDateString(),
@@ -195,7 +205,7 @@ class PmExecutorTest extends TestCase
         $response->assertRedirect("/machines/{$this->machine->machine_code}");
     }
 
-    public function test_executor_prefers_reconciled_august_dates_and_keeps_in_progress_precedence(): void
+    public function test_executor_selects_earliest_preserved_occurrence_and_keeps_in_progress_precedence(): void
     {
         $location = Location::query()->create([
             'location_code' => 'LOC-UC-018',
@@ -256,18 +266,19 @@ class PmExecutorTest extends TestCase
         $reconciler = app(PmScheduleDateReconciler::class);
         $result = $reconciler->reconcile($schedule);
 
-        $this->assertSame(2, $result['removed']);
-        $this->assertDatabaseMissing('pm_schedule_dates', [
+        // Slice A: baris stale sebelum batas materialisasi dipertahankan, bukan dihapus.
+        $this->assertSame(0, $result['removed']);
+        $this->assertDatabaseHas('pm_schedule_dates', [
             'pm_schedule_id' => $schedule->id,
             'machine_id' => $machine->id,
-            'scheduled_date' => '2026-06-06',
+            'scheduled_date' => '2026-06-06 00:00:00',
         ]);
 
         $service = app(PmExecutionService::class);
         $selected = $service->findScheduleDateForExecutor($machine);
 
-        $this->assertSame('2026-08-07', $selected->scheduled_date->toDateString());
-        $this->assertSame('scheduled', $selected->status);
+        // Occurrence scheduled paling awal yang dipertahankan tetap dipilih executor.
+        $this->assertSame('2026-06-06', $selected->scheduled_date->toDateString());
 
         $historicalInProgress = PmScheduleDate::query()->create([
             'pm_schedule_id' => $schedule->id,
@@ -420,6 +431,166 @@ class PmExecutorTest extends TestCase
         $this->assertDatabaseMissing('pm_execution_media', [
             'id' => $media->id,
         ]);
+    }
+
+    /**
+     * RED-1 (B3): O < T. Completion historis 2026-09-05 dan tidak ada occurrence
+     * berikutnya; submit harus membuat occurrence live baru >= T (2026-09-10),
+     * bukan menuliskan 2026-09-06..09-09.
+     */
+    public function test_submit_after_historical_completion_materializes_next_occurrence_at_or_after_today(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-10 00:00:00', 'Asia/Jakarta'));
+
+        $schedule = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => PmChecksheetMachine::query()->firstOrFail()->id,
+            'frequency_type' => 'daily',
+            'operational_from' => '2026-09-01',
+            'start_date' => '2026-09-01',
+            'generate_until' => '2026-10-01',
+            'is_active' => true,
+            'created_by' => $this->admin->id,
+        ]);
+
+        // Fixture default tidak boleh mengalahkan occurrence historis yang diuji.
+        $this->scheduleDate->forceFill(['status' => 'approved'])->save();
+
+        // Occurrence historis yang sudah completed: 2026-09-05 (sebelum T).
+        $historical = PmScheduleDate::query()->create([
+            'pm_schedule_id' => $schedule->id,
+            'machine_id' => $this->machine->id,
+            'scheduled_date' => '2026-09-05',
+            'status' => 'scheduled',
+        ]);
+
+        // Jalur eksekusi nyata yang memicu pembuatan next-date: submit.
+        $this->actingAs($this->operator)->post("/pm/executor/{$this->machine->machine_code}/submit", [
+            'execution_action' => [
+                $this->actionStandard->id => 'OK',
+            ],
+            'execution_number' => [
+                $this->numberStandard->id => 60,
+                $this->rangeStandard->id => 120,
+            ],
+        ])->assertRedirect("/machines/{$this->machine->machine_code}");
+
+        // Tidak ada occurrence live baru antara selesai historis dan hari ini.
+        $backfillCount = PmScheduleDate::query()
+            ->where('pm_schedule_id', $schedule->id)
+            ->where('machine_id', $this->machine->id)
+            ->whereBetween('scheduled_date', ['2026-09-06 00:00:00', '2026-09-09 23:59:59'])
+            ->count();
+        $this->assertSame(0, $backfillCount);
+
+        // Occurrence live pertama setelah submit harus >= hari bisnis (2026-09-10).
+        $next = PmScheduleDate::query()
+            ->where('pm_schedule_id', $schedule->id)
+            ->where('machine_id', $this->machine->id)
+            ->where('id', '!=', $historical->id)
+            ->orderBy('scheduled_date')
+            ->first();
+
+        $this->assertNotNull($next);
+        $this->assertGreaterThanOrEqual(
+            '2026-09-10',
+            $next->scheduled_date->toDateString(),
+            'Writer eksekusi membuat occurrence live sebelum batas materialisasi.',
+        );
+        $this->assertSame('scheduled', $next->status);
+    }
+
+    /**
+     * RED-2 (B1): operational_from = NULL adalah legacy unresolved; writer
+     * eksekusi tidak boleh otomatis mematerialisasi occurrence baru.
+     */
+    public function test_submit_with_legacy_null_operational_from_does_not_materialize_next_occurrence(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-10 00:00:00', 'Asia/Jakarta'));
+
+        $legacySchedule = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => PmChecksheetMachine::query()->firstOrFail()->id,
+            'frequency_type' => 'daily',
+            'operational_from' => null,
+            'start_date' => '2026-09-01',
+            'generate_until' => '2026-10-01',
+            'is_active' => true,
+            'created_by' => $this->admin->id,
+        ]);
+        $this->scheduleDate->forceFill(['status' => 'approved'])->save();
+        $legacyOccurrence = PmScheduleDate::query()->create([
+            'pm_schedule_id' => $legacySchedule->id,
+            'machine_id' => $this->machine->id,
+            'scheduled_date' => '2026-09-10',
+            'status' => 'scheduled',
+        ]);
+
+        $this->actingAs($this->operator)->post("/pm/executor/{$this->machine->machine_code}/start", [
+            'execution_action' => [$this->actionStandard->id => 'OK'],
+            'execution_number' => [$this->numberStandard->id => 60, $this->rangeStandard->id => 120],
+        ])->assertRedirect("/pm/executor/{$this->machine->machine_code}");
+        $this->actingAs($this->operator)->post("/pm/executor/{$this->machine->machine_code}/submit", [
+            'execution_action' => [$this->actionStandard->id => 'OK'],
+            'execution_number' => [$this->numberStandard->id => 60, $this->rangeStandard->id => 120],
+        ])->assertRedirect("/machines/{$this->machine->machine_code}");
+
+        // Riwayat submit harus tetap tersimpan pada occurrence legacy yang sama.
+        $execution = PmExecution::query()
+            ->where('pm_schedule_date_id', $legacyOccurrence->id)
+            ->first();
+        $this->assertNotNull($execution);
+        $this->assertSame($legacyOccurrence->id, $execution->pm_schedule_date_id);
+        $this->assertSame('waiting_review', $execution->fresh()->status);
+        $this->assertSame('waiting_review', $legacyOccurrence->fresh()->status);
+
+        // Legacy NULL tetap fail-closed: tidak membuat occurrence berikutnya.
+        $this->assertSame(
+            1,
+            PmScheduleDate::query()
+                ->where('pm_schedule_id', $legacySchedule->id)
+                ->where('machine_id', $this->machine->id)
+                ->count(),
+        );
+        $this->assertSame(
+            0,
+            PmScheduleDate::query()
+                ->where('pm_schedule_id', $legacySchedule->id)
+                ->where('machine_id', $this->machine->id)
+                ->where('id', '!=', $legacyOccurrence->id)
+                ->count(),
+        );
+    }
+
+    public function test_submit_respects_explicit_later_start_date_boundary(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-10 00:00:00', 'Asia/Jakarta'));
+
+        $schedule = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => PmChecksheetMachine::query()->firstOrFail()->id,
+            'frequency_type' => 'daily',
+            'operational_from' => '2026-09-01',
+            'start_date' => '2026-09-20',
+            'generate_until' => '2026-10-01',
+            'is_active' => true,
+            'created_by' => $this->admin->id,
+        ]);
+        $this->scheduleDate->forceFill(['status' => 'approved'])->save();
+        $historical = PmScheduleDate::query()->create([
+            'pm_schedule_id' => $schedule->id,
+            'machine_id' => $this->machine->id,
+            'scheduled_date' => '2026-09-05',
+            'status' => 'scheduled',
+        ]);
+
+        $this->actingAs($this->operator)->post("/pm/executor/{$this->machine->machine_code}/submit", [
+            'execution_action' => [$this->actionStandard->id => 'OK'],
+            'execution_number' => [$this->numberStandard->id => 60, $this->rangeStandard->id => 120],
+        ])->assertRedirect("/machines/{$this->machine->machine_code}");
+
+        $firstNext = PmScheduleDate::query()->where('pm_schedule_id', $schedule->id)
+            ->where('machine_id', $this->machine->id)->where('id', '!=', $historical->id)
+            ->orderBy('scheduled_date')->first();
+        $this->assertNotNull($firstNext);
+        $this->assertGreaterThanOrEqual('2026-09-20', $firstNext->scheduled_date->toDateString());
     }
 
     /**
@@ -1523,7 +1694,7 @@ class PmExecutorTest extends TestCase
                 private UniqueConstraintViolationException $violation,
                 private bool $hideCanonicalAlways,
             ) {
-                parent::__construct($warningService, $mediaService, $activityLogService, $notificationService);
+                parent::__construct($warningService, $mediaService, $activityLogService, $notificationService, app(PlanningPeriodPolicy::class));
             }
 
             protected function findCanonicalExecution(Machine $machine, PmScheduleDate $scheduleDate, bool $lock = false): ?PmExecution

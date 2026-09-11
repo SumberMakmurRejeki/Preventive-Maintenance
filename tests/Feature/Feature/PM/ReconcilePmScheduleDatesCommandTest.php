@@ -8,6 +8,7 @@ use App\Models\PmChecksheet;
 use App\Models\PmChecksheetMachine;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -17,6 +18,20 @@ use Tests\TestCase;
 class ReconcilePmScheduleDatesCommandTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Kunci tanggal bisnis agar fixture mingguan tetap berada di masa depan.
+        Carbon::setTestNow(Carbon::parse('2026-07-15 00:00:00', 'Asia/Jakarta'));
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
 
     public function test_it_requires_exactly_one_selection_mode(): void
     {
