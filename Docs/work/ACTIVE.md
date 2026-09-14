@@ -1,17 +1,17 @@
 # Active Work
 
-**Last Updated:** 2026-09-11
+**Last Updated:** 2026-09-14
 
-**Roadmap Phase:** Phase 2 — Historical Truth & Transaction Snapshot Foundation (**CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**)
+**Roadmap Phase:** Phase 3 — PM Lifecycle & Planning Completion (**IN PROGRESS / SLICE A ACCEPTED / TRACKING PUBLICATION PENDING**)
 **Authoritative Roadmap:** `Docs/roadmap.md`
-**Current Work:** Manager gate for **Phase 3 / ADR-010 activation**
-**Status:** Phase 2 **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED**
+**Current Work:** TASK-006 / ADR-010 Slice A tracking closure preparation.
+**Status:** ADR-010 **IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE**; TASK-006 **IN PROGRESS / Slice A IMPLEMENTED, VERIFIED, MANAGER ACCEPTED, ENGINEERING COMMITTED; tracking publication pending**.
 **Last Closed Major Item:** ADR-009 Slice A — No-Historical-Backlog Prevention (**COMPLETE / ACCEPTED / MANAGER ACCEPTED**)
-**Accepted Engineering Checkpoint:** `ba0bfd53baf06e46a0a1b25763789294dba91b7f`
-**Next Action:** Manager decision on Phase 3 / ADR-010 activation; no further ADR-009 Slice-A coding is pending.
-**After:** Phase 3 remains **NOT STARTED** and requires explicit manager authorization.
+**Accepted Engineering Checkpoint:** `23d64f0c6369931820ae9ec1767e2ce3c52ed430`
+**Next Action:** Prepare bounded tracking Commit 2 for Slice A publication.
+**After:** Slice B-E remain **NOT STARTED / NOT AUTHORIZED**. Preserve `A → (B + C) → D → E`.
 
-ADR-007 remains closed / pass / manager accepted / published. TASK-002 remains closed. Phase 3 is not started and is not activated by this handoff.
+ADR-007 remains closed / pass / manager accepted / published. TASK-002 remains closed. ADR-009 overall remains PARTIAL; its accepted Slice A must not be reopened. Historical PM is not implemented.
 
 ## Current ADR Assessment
 
@@ -60,17 +60,19 @@ R4 NULL/manual control tidak berlaku karena current FK adalah NOT NULL.
 
 ## Current Handoff
 
-**Current Work:** Manager gate for **Phase 3 / ADR-010 activation**.
+**Current Work:** TASK-006 — Machine & Schedule Lifecycle under ADR-010.
 
-**Last completed and accepted item:** ADR-009 Slice A — No-Historical-Backlog Prevention (**COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED**). ADR-009 overall remains **PARTIAL**.
+**Phase 3:** **IN PROGRESS / SLICE A ACCEPTED / TRACKING PUBLICATION PENDING**.
 
-**Implementation status:** Slice A is implemented, verified, independently reviewed, manager accepted, and recorded at engineering checkpoint `ba0bfd53baf06e46a0a1b25763789294dba91b7f`. Phase 2 exit gate passed and was manager accepted.
+**ADR-010:** **IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE**.
 
-**Accepted evidence:** Direct execution-writer **3 passed / 22 assertions**; `PmExecutorTest` **55 passed / 265 assertions**; targeted ADR-009 Slice A **129 passed / 538 assertions**; PHP lint, Pint, and diff checks passed; independent review passed.
+**TASK-006:** **IN PROGRESS**. Slice A is implemented, verified, independently reviewed, manager accepted, and engineering committed at `23d64f0c6369931820ae9ec1767e2ce3c52ed430`. Slice B-E remain **NOT STARTED / NOT AUTHORIZED**.
 
-**Next Action:** Manager decision on Phase 3 / ADR-010 activation. Remaining ADR-009 scope is future/deferred; implementation is not authorized by this handoff.
+**Dependency:** `Slice A → (Slice B + Slice C) → Slice D → Slice E`.
 
-**Canonical roadmap synchronization:** `Docs/roadmap.md` remains authoritative. ADR-009 overall remains PARTIAL, TASK-002 remains closed, and Phase 3 is not started.
+**Next Action:** Prepare bounded tracking Commit 2. No Slice B-E authorization exists.
+
+**Preserved position:** ADR-009 overall remains PARTIAL; ADR-009 Slice A is complete/accepted and not reopened. TASK-002 remains closed. Historical PM remains unimplemented.
 
 ### Current closure checkpoint
 
@@ -80,11 +82,13 @@ RI-012: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / CLOSED / 
 
 ADR-009 Slice A: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / MANAGER ACCEPTED — engineering checkpoint `ba0bfd53baf06e46a0a1b25763789294dba91b7f`**.
 
+TASK-006 Slice A: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / CORRECTIONS VERIFIED / ACCEPTED / MANAGER ACCEPTED / ENGINEERING COMMITTED — checkpoint `23d64f0c6369931820ae9ec1767e2ce3c52ed430`; tracking publication pending**.
+
 Historical proof used mutable Machine name and Location name changes. `machine_code` rename proof is not claimed because it is immutable under the current PRIME contract.
 
 ### Accepted engineering checkpoint
 
-Accepted engineering checkpoint: `ba0bfd53baf06e46a0a1b25763789294dba91b7f`; staged files `0`; ambient work remains intentionally dirty and uncommitted.
+Accepted engineering checkpoint: `23d64f0c6369931820ae9ec1767e2ce3c52ed430`; staged files `0`; tracking publication pending; ambient work remains intentionally dirty and uncommitted.
 
 ### Historical TASK-004 verification sections
 

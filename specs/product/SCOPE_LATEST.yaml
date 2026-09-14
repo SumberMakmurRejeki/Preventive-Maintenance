@@ -1,0 +1,60 @@
+# Ruang lingkup resmi untuk inisiatif lifecycle yang telah diterima manajer.
+feature_name: "TASK-006 — Machine & Schedule Lifecycle"
+core_value: >-
+  Mencegah pekerjaan PM baru yang tidak lagi live tanpa mengubah atau
+  menghilangkan kebenaran transaksi PM yang telah dimulai maupun histori yang ada.
+summary: >-
+  TASK-006 merealisasikan kontrak ADR-010 untuk lifecycle Machine dan PmSchedule.
+  Kontrak membedakan penghentian sementara dari terminal, mencegah status
+  lifecycle baru drift dari compatibility boolean lama, memisahkan floor
+  materialisasi occurrence baru dari floor eligibility occurrence mutable, dan
+  menjaga execution kanonis yang telah dimulai agar dapat selesai melalui review
+  normal.
+
+  Pekerjaan dibagi menjadi lima tahap berurutan. Slice A telah diterima secara engineering; tracking publication masih pending. Slice B sampai E tetap tidak terotorisasi sampai ketergantungan sebelumnya diterima secara independen.
+in_scope:
+  - id: "TASK-006/A"
+    outcome: "Mendefinisikan state lifecycle, effective_live_from, LifecyclePolicy, bounded is_active compatibility write-through, dua floor boundary, dan rencana migrasi additive."
+    status: "IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED; tracking publication pending"
+  - id: "TASK-006/B"
+    outcome: "Menerapkan transition authority Schedule ACTIVE, PAUSED, dan ENDED."
+    status: "NOT STARTED / NOT AUTHORIZED"
+  - id: "TASK-006/C"
+    outcome: "Menerapkan transition authority Machine ACTIVE, INACTIVE, RETIRED, dan recommission."
+    status: "NOT STARTED / NOT AUTHORIZED"
+  - id: "TASK-006/D"
+    outcome: "Memigrasikan seluruh writer dan read-side live ke authority serta eligibility lifecycle."
+    status: "NOT STARTED / NOT AUTHORIZED"
+  - id: "TASK-006/E"
+    outcome: "Membuktikan concurrency MySQL, UAT lintas permukaan, dan menutup TASK-006."
+    status: "NOT STARTED / NOT AUTHORIZED"
+out_of_scope:
+  - item: "Historical PM implementation"
+    reason: "Memerlukan source dan provenance transaksi historis tersendiri; TASK-006 hanya menjaga histori yang sudah ada."
+  - item: "Reporting dan KPI untuk pre-boundary mutable occurrence"
+    reason: "Klasifikasi pelaporan didefer ke reporting policy / Phase 9 dan tidak diperlukan untuk correctness lifecycle."
+  - item: "UI pause/resume, retire/recommission, dan endpoint transition pada Slice A"
+    reason: "Transition authority dan UI adalah pekerjaan Slice B/C setelah data foundation diterima."
+  - item: "Rolling extension ADR-009, option catalog, dan Breakdown RCA"
+    reason: "Merupakan outcome ADR/fase lain dan tidak boleh memperluas TASK-006."
+  - item: "TASK-007"
+    reason: "Manajer melarang pembuatan task tambahan untuk dekomposisi ini."
+constraints:
+  - "Slice A engineering is committed at 23d64f0c6369931820ae9ec1767e2ce3c52ed430; this tracking session changes only the six authorized documents and performs no new source, test, migration, database mutation, staging, commit, or push."
+  - "operational_from tetap provenance ADR-009; materialization floor dan persisted live-eligibility floor adalah konsep terpisah."
+  - "BusinessDate::today() dipakai oleh materialisasi ADR-009, bukan sebagai moving executor/live-eligibility floor."
+  - "Setiap mutation legacy is_active yang masih diizinkan harus menulis lifecycle_status non-terminal yang sesuai dalam operasi persist yang sama."
+  - "Tidak ada hard delete, rewrite pm_executions, rewrite protected schedule dates, snapshot rewrite, atau penghapusan occurrence lama."
+  - "Lifecycle read-side harus menolak pekerjaan non-live tetapi tidak boleh menstrand execution kanonis yang sudah IN_PROGRESS."
+  - "Urutan lock lifecycle/execution: Machine → PmSchedule → PmScheduleDate → PmExecution → items/media; workflow pembuatan schedule eksplisit memakai PmChecksheet → Machine → PmSchedule → PmScheduleDate."
+success_criteria:
+  - "TASK-006 memiliki satu plan kanonis dengan lima slice, dependency A → (B + C) → D → E, dan otorisasi eksplisit per slice."
+  - "Status, state machine, legacy mapping, compatibility write-through, dua boundary lifecycle, recommission, dan read-side contract ADR-010 terdokumentasi; Slice A dinyatakan selesai secara engineering, sedangkan Slice B-E tetap tidak dinyatakan selesai."
+  - "Slice A memiliki scope, schema minimum, migration/backfill, compatibility invariant, dan test plan yang dapat dieksekusi tanpa mengubah histori."
+  - "Dokumen tracking menyatakan Phase 3 in progress, ADR-010 belum selesai, TASK-002 tetap closed, ADR-009 Slice A tidak dibuka kembali, dan Historical PM belum diimplementasikan."
+references:
+  - "Docs/roadmap.md"
+  - "Docs/decisions/ADR-010-schedule-and-machine-lifecycle.md"
+  - "Docs/decisions/ADR-009-live-schedule-operational-window-and-planning.md"
+  - "Docs/work/tasks/TASK-006-machine-and-schedule-lifecycle.md"
+  - "specs/IMPACT_LATEST.md"

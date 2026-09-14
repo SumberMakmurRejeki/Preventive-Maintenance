@@ -10,36 +10,36 @@ session:
 handoff:
   next_skill: null
   story_id: null
-  status: "Phase 2 CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — RI-012 CLOSED / PASS / MANAGER ACCEPTED; ADR-009 Slice A ACCEPTED; ADR-009 overall PARTIAL"
-  updated_at: "2026-09-11"
-  next_action: "Manager decision on Phase 3 / ADR-010 activation; no further ADR-009 Slice-A coding is pending"
-  task_status: "Phase 2 CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — ADR-009 Slice A accepted; current manager gate is Phase 3 / ADR-010 activation"
-  adr_status: "RI-012 CLOSED / PASS / MANAGER ACCEPTED; ADR-007 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 PARTIAL"
-  planning_document: null
+  status: "Phase 3 IN PROGRESS; TASK-006 Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED; tracking publication pending; ADR-009 Slice A ACCEPTED; ADR-009 overall PARTIAL"
+  updated_at: "2026-09-14"
+  next_action: "Prepare bounded tracking Commit 2 for TASK-006 Slice A publication; Slice B-E remain not started and not authorized"
+  task_status: "TASK-006 — Machine & Schedule Lifecycle: IN PROGRESS / Slice A accepted and engineering committed; tracking publication pending"
+  adr_status: "ADR-010 Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED; ADR-010 NOT DONE; ADR-007 CLOSED / PASS / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 PARTIAL"
+  planning_document: "Docs/work/tasks/TASK-006-machine-and-schedule-lifecycle.md"
   correction_report: null
-  blocker: "None for Phase 2 or accepted ADR-009 Slice A; Phase 3 activation requires explicit manager authorization"
+  blocker: "No engineering blocker. Tracking publication is pending; Slice B-E remain not authorized."
 
 planning:
-  risk: null
-  database_decision: null
-  lock_inversion: null
+  risk: "HIGH — shared critical PM chain and distributed lifecycle readers/writers"
+  database_decision: "Slice A plans additive lifecycle_status and effective_live_from fields only; legacy false maps to INACTIVE/PAUSED and never to RETIRED/ENDED."
+  lock_inversion: "Lifecycle/execution order: Machine → PmSchedule → PmScheduleDate → PmExecution → items/media. Recommission/new-schedule creation order remains PmChecksheet → Machine → PmSchedule → PmScheduleDate."
   duplicate_preflight: null
-  manual_null_control: null
-  slice_count: null
+  manual_null_control: "Historical PM remains unimplemented and outside TASK-006."
+  slice_count: 5
 
 git:
   branch: develop
-  # `head` records the accepted engineering checkpoint; tracking closure follows in a separate commit.
-  head: "ba0bfd53baf06e46a0a1b25763789294dba91b7f"
+  # `head` records the accepted Slice-A engineering checkpoint; tracking publication follows in a separate commit.
+  head: "23d64f0c6369931820ae9ec1767e2ce3c52ed430"
   dirty_checkpoint_expected: true
   staged_file_count: 0
   staged_checkpoint_sha256: null
 
 verification:
-  status: "PASS — ADR-009 Slice A implemented, verified, independently reviewed, and manager accepted; Phase 2 exit gate passed"
-  application_tests: "Direct execution-writer: 3 passed / 22 assertions; PmExecutorTest: 55 passed / 265 assertions; targeted ADR-009 Slice A: 129 passed / 538 assertions"
-  database_mutation: "No database mutation performed in tracking closure; accepted Slice-A verification preserved existing historical rows"
+  status: "PASS — TASK-006 Slice A implemented, verified, independently reviewed, and manager accepted; ADR-009 Slice A accepted; Phase 2 exit gate passed"
+  application_tests: "TASK-006 Slice A: LifecyclePolicyTest, LifecycleSchemaTest, and changed-writer regression suites PASS; lifecycle finite-state MySQL proof PASS (invalid DB states rejected, legacy mappings preserved, protected history unchanged); migration apply/rollback/reapply PASS; RED VARCHAR control PASS; scratch cleanup zero residual. ADR-009 Slice A: direct execution-writer 3 passed / 22 assertions; PmExecutorTest 55 passed / 265 assertions; targeted 129 passed / 538 assertions"
+  database_mutation: "No database mutation performed in tracking preparation; accepted Slice-A verification preserved existing historical rows"
   canonical_unique_index_present: true
   r3: PASS
   documentation_validation: PASS
-  remaining_risks: "ADR-009 global planning, rolling extension, planning-decrease policy, and ADR-010 lifecycle integration remain future/deferred; no Phase 2 blocker"
+  remaining_risks: "ADR-009 global planning, rolling extension, planning-decrease policy, ADR-010 Slice B-E, and lifecycle concurrency/UAT closure remain future/deferred; no Phase 2 blocker"
