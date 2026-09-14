@@ -11,11 +11,11 @@ summary: >-
   menjaga execution kanonis yang telah dimulai agar dapat selesai melalui review
   normal.
 
-  Pekerjaan dibagi menjadi lima tahap berurutan. Slice A telah diterima secara engineering; tracking publication masih pending. Slice B sampai E tetap tidak terotorisasi sampai ketergantungan sebelumnya diterima secara independen.
+  Pekerjaan dibagi menjadi lima tahap berurutan. Slice A telah diterima secara engineering dan tracking publication-nya telah dipublikasikan. Slice B sampai E tetap tidak terotorisasi sampai ketergantungan sebelumnya diterima secara independen.
 in_scope:
   - id: "TASK-006/A"
     outcome: "Mendefinisikan state lifecycle, effective_live_from, LifecyclePolicy, bounded is_active compatibility write-through, dua floor boundary, dan rencana migrasi additive."
-    status: "IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED; tracking publication pending"
+    status: "IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED"
   - id: "TASK-006/B"
     outcome: "Menerapkan transition authority Schedule ACTIVE, PAUSED, dan ENDED."
     status: "NOT STARTED / NOT AUTHORIZED"
@@ -40,7 +40,7 @@ out_of_scope:
   - item: "TASK-007"
     reason: "Manajer melarang pembuatan task tambahan untuk dekomposisi ini."
 constraints:
-  - "Slice A engineering is committed at 23d64f0c6369931820ae9ec1767e2ce3c52ed430; this tracking session changes only the six authorized documents and performs no new source, test, migration, database mutation, staging, commit, or push."
+  - "Slice A engineering is committed at 23d64f0c6369931820ae9ec1767e2ce3c52ed430; the tracking closure commit 4a7c48a3c9e7463f065c3bf77fbce8e71b93509e is published. This synchronization changes only the six authorized documents and performs no new source, test, migration, or database mutation."
   - "operational_from tetap provenance ADR-009; materialization floor dan persisted live-eligibility floor adalah konsep terpisah."
   - "BusinessDate::today() dipakai oleh materialisasi ADR-009, bukan sebagai moving executor/live-eligibility floor."
   - "Setiap mutation legacy is_active yang masih diizinkan harus menulis lifecycle_status non-terminal yang sesuai dalam operasi persist yang sama."

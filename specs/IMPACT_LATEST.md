@@ -94,7 +94,7 @@ boundary. Slice A therefore defines, but does not apply, separate:
 
 ## Slice A Result
 
-Slice A is implemented, verified, independently reviewed, manager accepted, and committed at `23d64f0c6369931820ae9ec1767e2ce3c52ed430`. The accepted foundation includes lifecycle schema/data fields, finite-state DB representation, explicit compatibility write-through, pure policy/boundary foundation, and verification evidence.
+Slice A is implemented, verified, independently reviewed, manager accepted, and committed at `23d64f0c6369931820ae9ec1767e2ce3c52ed430`. Its tracking closure is published in commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e`. The accepted foundation includes lifecycle schema/data fields, finite-state DB representation, explicit compatibility write-through, pure policy/boundary foundation, and verification evidence.
 
 - Lifecycle finite-state MySQL proof: PASS; invalid states rejected.
 - Legacy mappings preserved; protected history preserved.
@@ -120,4 +120,4 @@ work, or reinterpret preserved transactions.
 
 ## Recommended Action
 
-Prepare bounded tracking publication for Slice A. Do not claim Schedule/Machine transition services or distributed reader cutover are implemented, and do not authorize Slice B-E without the required dependency and review gates.
+Tracking publication for Slice A is complete. Do not claim Schedule/Machine transition services or distributed reader cutover are implemented, and do not authorize Slice B-E without the required dependency and review gates.

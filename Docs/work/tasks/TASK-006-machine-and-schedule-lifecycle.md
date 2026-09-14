@@ -7,17 +7,16 @@
 - **TASK-006:** IN PROGRESS.
 - **Implementation:** Slice A complete; B-E not started.
 - **ADR-010:** IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE.
-- **Slice A — Contract & Data Foundation:** IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED / ENGINEERING COMMITTED at `23d64f0c6369931820ae9ec1767e2ce3c52ed430`; tracking publication pending.
+- **Slice A — Contract & Data Foundation:** IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED at engineering checkpoint `23d64f0c6369931820ae9ec1767e2ce3c52ed430`; tracking closure commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e` is published.
 - **Slice B — Schedule Lifecycle:** NOT STARTED / NOT AUTHORIZED.
 - **Slice C — Machine Lifecycle:** NOT STARTED / NOT AUTHORIZED.
 - **Slice D — Distributed Writer Integration:** NOT STARTED / NOT AUTHORIZED.
 - **Slice E — Concurrency, UAT & Closure:** NOT STARTED / NOT AUTHORIZED.
 
 The planning authorization above was superseded by the later explicit Slice A
-implementation authorization. Slice A engineering is committed; the remaining
-tracking publication is a bounded documentation commit only, and Slice B-E
-remain unauthorized for any code, migration, test, database, Git-index,
-commit, or deployment work.
+implementation authorization. Slice A engineering and tracking publication are
+complete; Slice B-E remain unauthorized for any code, migration, test, database,
+Git-index, commit, or deployment work.
 
 ## 2. Goal
 
@@ -115,7 +114,7 @@ Slice A delivered the smallest additive lifecycle data and pure-domain foundatio
 - **Verification result:** lifecycle finite-state MySQL proof PASS (invalid DB states rejected, legacy boolean mappings preserved, protected history unchanged); migration apply/rollback/reapply PASS; RED VARCHAR control PASS; real machines and `pm_schedules` unchanged during RED; scratch/fixture cleanup zero residual; `LifecycleSchemaTest` PASS; `LifecyclePolicyTest` PASS; changed-writer regression suites PASS.
 - **Independent review / corrections:** independent fresh-context reviews PASS; identified review corrections were applied and re-verified.
 - **Manager acceptance:** ACCEPTED.
-- **Publication:** TRACKING CLOSURE RECORDED IN THIS COMMIT / REMOTE PUBLICATION PENDING — the bounded tracking commit is proposed as `docs: record TASK-006 Slice A closure`; origin/develop does not yet contain the engineering or tracking commits.
+- **Publication:** ENGINEERING COMMIT `23d64f0c6369931820ae9ec1767e2ce3c52ed430` and tracking closure commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e` are remotely published. Slice A is CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED.
 - **Baseline note:** unrelated full-suite baseline failures are known non-causal baseline findings, not Slice A defects.
 - **Dependency sequence:** unchanged — `A → (B + C) → D → E`; Slice B-E remain NOT STARTED / NOT AUTHORIZED.
 

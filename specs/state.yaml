@@ -10,14 +10,14 @@ session:
 handoff:
   next_skill: null
   story_id: null
-  status: "Phase 3 IN PROGRESS; TASK-006 Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED; tracking publication pending; ADR-009 Slice A ACCEPTED; ADR-009 overall PARTIAL"
+  status: "Phase 3 IN PROGRESS; TASK-006 Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 overall PARTIAL"
   updated_at: "2026-09-14"
-  next_action: "Prepare bounded tracking Commit 2 for TASK-006 Slice A publication; Slice B-E remain not started and not authorized"
-  task_status: "TASK-006 — Machine & Schedule Lifecycle: IN PROGRESS / Slice A accepted and engineering committed; tracking publication pending"
-  adr_status: "ADR-010 Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED; ADR-010 NOT DONE; ADR-007 CLOSED / PASS / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 PARTIAL"
+  next_action: "No implementation authorization is active; await explicit manager authorization for the next slice; Slice B-E remain not started and not authorized"
+  task_status: "TASK-006 — Machine & Schedule Lifecycle: IN PROGRESS / Slice A accepted, closed, pass, manager accepted, and published; engineering checkpoint 23d64f0c6369931820ae9ec1767e2ce3c52ed430; tracking commit 4a7c48a3c9e7463f065c3bf77fbce8e71b93509e"
+  adr_status: "ADR-010 Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED; ADR-010 NOT DONE; ADR-007 CLOSED / PASS / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 PARTIAL"
   planning_document: "Docs/work/tasks/TASK-006-machine-and-schedule-lifecycle.md"
   correction_report: null
-  blocker: "No engineering blocker. Tracking publication is pending; Slice B-E remain not authorized."
+  blocker: "No blocker. Slice A tracking publication is complete; Slice B-E remain not authorized."
 
 planning:
   risk: "HIGH — shared critical PM chain and distributed lifecycle readers/writers"
@@ -29,7 +29,7 @@ planning:
 
 git:
   branch: develop
-  # `head` records the accepted Slice-A engineering checkpoint; tracking publication follows in a separate commit.
+  # `head` records the accepted Slice-A engineering checkpoint; tracking publication is recorded by commit 4a7c48a3c9e7463f065c3bf77fbce8e71b93509e.
   head: "23d64f0c6369931820ae9ec1767e2ce3c52ed430"
   dirty_checkpoint_expected: true
   staged_file_count: 0
