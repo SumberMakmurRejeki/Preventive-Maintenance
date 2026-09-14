@@ -112,6 +112,9 @@ class MasterPmChecksheetOperationalWindowTest extends TestCase
         $this->assertSame('2026-06-01', $schedule->operational_from?->toDateString());
         $this->assertSame('2026-06-01', $schedule->start_date?->toDateString());
         $this->assertSame('2027-06-01', $schedule->generate_until?->toDateString());
+
+        $this->assertSame('active', $schedule->lifecycle_status);
+        $this->assertTrue($schedule->is_active);
     }
 
     public function test_update_accepts_unchanged_past_operational_from_and_clamps_planning_start(): void

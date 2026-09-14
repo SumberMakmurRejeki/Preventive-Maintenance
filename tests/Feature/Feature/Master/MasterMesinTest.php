@@ -115,6 +115,8 @@ class MasterMesinTest extends TestCase
         $this->assertNotNull($machine->qr_code_path);
         Storage::disk('public')->assertExists($machine->qr_code_path);
 
+        $this->assertSame('active', $machine->lifecycle_status);
+
         $this->assertDatabaseHas('user_activity_logs', [
             'module_name' => 'master_mesin',
             'action' => 'create',
@@ -155,6 +157,8 @@ class MasterMesinTest extends TestCase
         $this->assertSame('qr-msn-001', $machine->qr_token);
         $this->assertSame($newLocation->id, $machine->location_id);
         $this->assertSame('Genset Updated', $machine->machine_name);
+
+        $this->assertSame('active', $machine->lifecycle_status);
     }
 
     public function test_machine_code_cannot_be_changed_after_creation(): void
@@ -344,11 +348,18 @@ class MasterMesinTest extends TestCase
         $this->assertDatabaseHas('machines', [
             'id' => $machine->id,
             'is_active' => false,
+            'lifecycle_status' => 'inactive',
         ]);
 
         $this->actingAs($this->admin)
             ->patch("/pm/master-mesin/{$machine->id}/aktifkan")
             ->assertRedirect('/pm/master-mesin');
+
+        $this->assertDatabaseHas('machines', [
+            'id' => $machine->id,
+            'is_active' => true,
+            'lifecycle_status' => 'active',
+        ]);
 
         $this->actingAs($this->admin)
             ->delete("/pm/master-mesin/{$machine->id}")

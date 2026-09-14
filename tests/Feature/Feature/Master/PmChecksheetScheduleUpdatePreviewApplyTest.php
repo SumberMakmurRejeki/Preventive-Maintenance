@@ -557,6 +557,9 @@ class PmChecksheetScheduleUpdatePreviewApplyTest extends TestCase
 
         // Pastikan ada tanggal yang dibuat.
         $this->assertGreaterThan(0, PmScheduleDate::count(), 'Setelah apply, harus ada schedule dates.');
+
+        // Penulis schedule preview/apply tetap menyimpan boolean dan status non-terminal sinkron.
+        $this->assertSame('active', PmSchedule::query()->firstOrFail()->lifecycle_status);
     }
 
     // =========================================================================

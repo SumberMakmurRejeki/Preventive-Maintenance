@@ -10,6 +10,7 @@ use App\Models\PmChecksheetStandard;
 use App\Models\PmSchedule;
 use App\Services\Auth\ActivityLogService;
 use App\Services\PM\BusinessDate;
+use App\Services\PM\LifecyclePolicy;
 use App\Services\PM\PlanningPeriodPolicy;
 use App\Services\PM\PmScheduleDateReconciler;
 use Carbon\Carbon;
@@ -24,6 +25,7 @@ class PmChecksheetService
         protected ActivityLogService $activityLog,
         protected PmScheduleDateReconciler $scheduleDateReconciler,
         protected PlanningPeriodPolicy $planningPeriodPolicy,
+        protected LifecyclePolicy $lifecyclePolicy,
     ) {}
 
     public function create(Request $request, array $payload): PmChecksheet
@@ -449,7 +451,7 @@ class PmChecksheetService
                     'operational_from' => $window['operational_from'],
                     'start_date' => $window['start_date'],
                     'generate_until' => $window['generate_until'],
-                    'is_active' => true,
+                    ...$this->lifecyclePolicy->scheduleProjection(true),
                     'created_by' => $request->user()?->id,
                 ],
             );

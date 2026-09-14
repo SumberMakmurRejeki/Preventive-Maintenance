@@ -6,6 +6,7 @@ use App\Models\Machine;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Services\Auth\ActivityLogService;
+use App\Services\PM\LifecyclePolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,7 @@ class MachineService
     public function __construct(
         protected ActivityLogService $activityLog,
         protected QrCodeService $qrCodeService,
+        protected LifecyclePolicy $lifecyclePolicy,
     ) {}
 
     /**
@@ -75,9 +77,7 @@ class MachineService
     {
         $oldValues = $machine->only(['location_id', 'machine_code', 'machine_name', 'qr_token', 'qr_code_path', 'description', 'is_active']);
 
-        $machine->forceFill([
-            'is_active' => false,
-        ])->save();
+        $machine->forceFill($this->lifecyclePolicy->machineProjection(false))->save();
 
         $this->activityLog->log(
             request: $request,
@@ -95,9 +95,7 @@ class MachineService
     {
         $oldValues = $machine->only(['location_id', 'machine_code', 'machine_name', 'qr_token', 'qr_code_path', 'description', 'is_active']);
 
-        $machine->forceFill([
-            'is_active' => true,
-        ])->save();
+        $machine->forceFill($this->lifecyclePolicy->machineProjection(true))->save();
 
         $this->activityLog->log(
             request: $request,
@@ -292,12 +290,21 @@ class MachineService
      */
     protected function normalizePayload(array $payload): array
     {
-        return Arr::only($payload, [
+        $normalized = Arr::only($payload, [
             'location_id',
             'machine_code',
             'machine_name',
             'description',
             'is_active',
         ]);
+
+        // Sinkronkan status lifecycle saat payload membawa is_active,
+        // memakai proyeksi legacy agar mapping tidak terduplikasi.
+        if (array_key_exists('is_active', $normalized)) {
+            $normalized['lifecycle_status'] = $this->lifecyclePolicy
+                ->machineProjection((bool) $normalized['is_active'])['lifecycle_status'];
+        }
+
+        return $normalized;
     }
 }

@@ -23,6 +23,8 @@ class PmSchedule extends Model
         'start_date',
         'generate_until',
         'is_active',
+        'lifecycle_status',
+        'effective_live_from',
         'created_by',
     ];
 
@@ -35,6 +37,7 @@ class PmSchedule extends Model
             'start_date' => 'date',
             'generate_until' => 'date',
             'is_active' => 'boolean',
+            'effective_live_from' => 'date',
         ];
     }
 
