@@ -5,18 +5,18 @@
 - **Phase:** Phase 3 — PM Lifecycle & Planning Completion.
 - **Primary ADR:** ADR-010 — Schedule & Machine Lifecycle.
 - **TASK-006:** IN PROGRESS.
-- **Implementation:** Slice A complete; B-E not started.
-- **ADR-010:** IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE.
+- **Implementation:** Slices A-B complete; C-E not started.
+- **ADR-010:** IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / NOT DONE.
 - **Slice A — Contract & Data Foundation:** IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED at engineering checkpoint `23d64f0c6369931820ae9ec1767e2ce3c52ed430`; tracking closure commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e` is published.
-- **Slice B — Schedule Lifecycle:** NOT STARTED / NOT AUTHORIZED.
+- **Slice B — Schedule Lifecycle:** IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / CORRECTED / FINAL COMPLIANCE PASS / ENGINEERING COMMITTED / MANAGER ACCEPTED / CLOSED / PASS / PUBLISHED at engineering checkpoint `0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6`.
 - **Slice C — Machine Lifecycle:** NOT STARTED / NOT AUTHORIZED.
 - **Slice D — Distributed Writer Integration:** NOT STARTED / NOT AUTHORIZED.
 - **Slice E — Concurrency, UAT & Closure:** NOT STARTED / NOT AUTHORIZED.
 
 The planning authorization above was superseded by the later explicit Slice A
-implementation authorization. Slice A engineering and tracking publication are
-complete; Slice B-E remain unauthorized for any code, migration, test, database,
-Git-index, commit, or deployment work.
+and Slice B implementation authorizations. Slice A and Slice B engineering and
+tracking publications are complete; Slice C-E remain unauthorized for any code,
+migration, test, database, Git-index, commit, or deployment work.
 
 ## 2. Goal
 
@@ -116,7 +116,7 @@ Slice A delivered the smallest additive lifecycle data and pure-domain foundatio
 - **Manager acceptance:** ACCEPTED.
 - **Publication:** ENGINEERING COMMIT `23d64f0c6369931820ae9ec1767e2ce3c52ed430` and tracking closure commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e` are remotely published. Slice A is CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED.
 - **Baseline note:** unrelated full-suite baseline failures are known non-causal baseline findings, not Slice A defects.
-- **Dependency sequence:** unchanged — `A → (B + C) → D → E`; Slice B-E remain NOT STARTED / NOT AUTHORIZED.
+- **Dependency sequence:** unchanged — `A → (B + C) → D → E`; Slice C-E remain NOT STARTED / NOT AUTHORIZED.
 
 ### Required now
 
@@ -337,14 +337,58 @@ locked, reason/audit-capable Schedule transition service for pause, resume, and
 end. It updates the compatibility projection and applies the new schedule
 boundary on resume.
 
+### Result — 2026-09-15
+
+Slice B is **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / CORRECTED /
+FINAL COMPLIANCE PASS / ENGINEERING COMMITTED / MANAGER ACCEPTED / CLOSED /
+PASS / PUBLISHED** at engineering checkpoint
+`0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6`.
+
+It provides:
+
+- authoritative Schedule lifecycle transitions: `ACTIVE → PAUSED`,
+  `PAUSED → ACTIVE`, `ACTIVE → ENDED`, and `PAUSED → ENDED`;
+- ordinary `ENDED → ACTIVE` rejection and mandatory transition reason;
+- same-transaction activity audit, with audit failure rolling back the lifecycle
+  mutation;
+- `is_active` compatibility projection; PAUSED writers cannot implicitly
+  resume, and ENDED legacy writes fail closed;
+- `effective_live_from = BusinessDate::today()` on resume, while
+  `operational_from`, `start_date`, and `generate_until` remain unchanged;
+- no catch-up backlog on resume;
+- `Machine → PmSchedule` locking and locked parent-provenance revalidation;
+- Lifecycle transition does not rewrite protected historical evidence.
+  Legitimate continuation of an already-started execution may append normal
+  workflow history such as submit/review/approval.
+
+Slice B owns Schedule lifecycle mutation authority. Distributed executor,
+queue, reconciliation, cron, notification, and other read-side eligibility
+enforcement remains Slice D scope.
+
 ### Acceptance criteria
 
-- [ ] Legal Schedule transitions succeed; `ENDED → ACTIVE` fails closed.
-- [ ] New starts and live aging are blocked for paused/ended schedules, while a
-  canonical in-progress execution may reach review and approval.
-- [ ] Resume sets a new Schedule boundary without changing `operational_from`
+- [x] Legal Schedule transitions succeed; `ENDED → ACTIVE` fails closed.
+- [x] The authoritative service enforces lifecycle mutation and compatibility
+  projection; distributed new-start and live-aging enforcement remains Slice D.
+- [x] Resume sets a new Schedule boundary without changing `operational_from`
   or materializing a backlog.
-- [ ] Focused tests and independent fresh-context review pass.
+- [x] Focused tests, corrections, and independent fresh-context review pass.
+
+### Verification evidence
+
+- `ScheduleLifecycleServiceTest`: **13 passed / 46 assertions**.
+- `ScheduleLifecycleWriterGuardTest`: **4 passed / 17 assertions**.
+- `LifecyclePolicyTest`: **9 passed / 41 assertions**.
+- `PmChecksheetScheduleUpdatePreviewApplyTest`: **25 passed / 80 assertions**.
+- Started-execution completion proof: **PASS**.
+- PHP lint and `git diff --check`: **PASS**.
+- Real lifecycle concurrency: **DEFERRED TO SLICE E**.
+- Browser: **NOT REQUIRED**; Slice B introduced no lifecycle route or UI.
+
+Known full-suite failures are unrelated baseline findings:
+`AuthenticationFlowTest`, `DashboardMonitoringTest`, `BreakdownCloseTest`,
+and `MasterPmChecksheetTest::test_updating_checksheet_keeps_existing_pm_review_data`.
+Do not claim that all tests pass.
 
 ## 8. Slice C — Machine Lifecycle
 

@@ -10,14 +10,14 @@ session:
 handoff:
   next_skill: null
   story_id: null
-  status: "Phase 3 IN PROGRESS; TASK-006 Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 overall PARTIAL"
-  updated_at: "2026-09-14"
-  next_action: "No implementation authorization is active; await explicit manager authorization for the next slice; Slice B-E remain not started and not authorized"
-  task_status: "TASK-006 — Machine & Schedule Lifecycle: IN PROGRESS / Slice A accepted, closed, pass, manager accepted, and published; engineering checkpoint 23d64f0c6369931820ae9ec1767e2ce3c52ed430; tracking commit 4a7c48a3c9e7463f065c3bf77fbce8e71b93509e"
-  adr_status: "ADR-010 Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED; ADR-010 NOT DONE; ADR-007 CLOSED / PASS / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 PARTIAL"
+  status: "Phase 3 IN PROGRESS; TASK-006 Slices A-B IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED; ADR-010 SLICES A-B ACCEPTED; ADR-010 NOT DONE"
+  updated_at: "2026-09-15"
+  next_action: "No implementation authorization is active after Slice B publication; await explicit manager authorization for Slice C and later; Slice C-E remain not started and not authorized"
+  task_status: "TASK-006 — Machine & Schedule Lifecycle: IN PROGRESS / Slices A-B accepted, closed, pass, manager accepted, and published; Slice B engineering checkpoint 0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6"
+  adr_status: "ADR-010 Slices A-B IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED; ADR-010 NOT DONE; ADR-007 CLOSED / PASS / PUBLISHED; ADR-009 Slice A ACCEPTED; ADR-009 PARTIAL"
   planning_document: "Docs/work/tasks/TASK-006-machine-and-schedule-lifecycle.md"
   correction_report: null
-  blocker: "No blocker. Slice A tracking publication is complete; Slice B-E remain not authorized."
+  blocker: "No blocker. Slice B tracking publication is complete; Slice C-E remain not authorized."
 
 planning:
   risk: "HIGH — shared critical PM chain and distributed lifecycle readers/writers"
@@ -29,17 +29,17 @@ planning:
 
 git:
   branch: develop
-  # `head` records the accepted Slice-A engineering checkpoint; tracking publication is recorded by commit 4a7c48a3c9e7463f065c3bf77fbce8e71b93509e.
-  head: "23d64f0c6369931820ae9ec1767e2ce3c52ed430"
+  # `head` records the accepted Slice-B engineering checkpoint; tracking publication is recorded by the current tracking commit.
+  head: "0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6"
   dirty_checkpoint_expected: true
   staged_file_count: 0
   staged_checkpoint_sha256: null
 
 verification:
-  status: "PASS — TASK-006 Slice A implemented, verified, independently reviewed, and manager accepted; ADR-009 Slice A accepted; Phase 2 exit gate passed"
-  application_tests: "TASK-006 Slice A: LifecyclePolicyTest, LifecycleSchemaTest, and changed-writer regression suites PASS; lifecycle finite-state MySQL proof PASS (invalid DB states rejected, legacy mappings preserved, protected history unchanged); migration apply/rollback/reapply PASS; RED VARCHAR control PASS; scratch cleanup zero residual. ADR-009 Slice A: direct execution-writer 3 passed / 22 assertions; PmExecutorTest 55 passed / 265 assertions; targeted 129 passed / 538 assertions"
-  database_mutation: "No database mutation performed in tracking preparation; accepted Slice-A verification preserved existing historical rows"
+  status: "PASS — TASK-006 Slices A-B implemented, verified, independently reviewed, and manager accepted; ADR-009 Slice A accepted; Phase 2 exit gate passed"
+  application_tests: "TASK-006 Slice A: LifecyclePolicyTest, LifecycleSchemaTest, and changed-writer regression suites PASS; lifecycle finite-state MySQL proof PASS (invalid DB states rejected, legacy mappings preserved, protected history unchanged); migration apply/rollback/reapply PASS; RED VARCHAR control PASS; scratch cleanup zero residual. TASK-006 Slice B: ScheduleLifecycleServiceTest 13 passed / 46 assertions; ScheduleLifecycleWriterGuardTest 4 passed / 17 assertions; LifecyclePolicyTest 9 passed / 41 assertions; PmChecksheetScheduleUpdatePreviewApplyTest 25 passed / 80 assertions; started-execution completion proof PASS; PHP lint PASS; git diff --check PASS; full suite has known unrelated baseline failures."
+  database_mutation: "No database mutation performed in tracking synchronization; accepted Slice-A and Slice-B verification preserved existing historical rows"
   canonical_unique_index_present: true
   r3: PASS
   documentation_validation: PASS
-  remaining_risks: "ADR-009 global planning, rolling extension, planning-decrease policy, ADR-010 Slice B-E, and lifecycle concurrency/UAT closure remain future/deferred; no Phase 2 blocker"
+  remaining_risks: "Real lifecycle concurrency is deferred to Slice E; distributed executor/queue/cron/notification read-side enforcement is deferred to Slice D; Slice C-E remain future and unauthorized; full suite retains known unrelated baseline failures"

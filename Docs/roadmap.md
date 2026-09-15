@@ -2,8 +2,8 @@
 
 **Project:** PRIME — Preventive Maintenance System
 **Canonical document:** `Docs/roadmap.md`
-**Last synchronized:** 2026-09-14
-**Accepted engineering checkpoint:** `develop @ 23d64f0c6369931820ae9ec1767e2ce3c52ed430`
+**Last synchronized:** 2026-09-15
+**Accepted engineering checkpoint:** `develop @ 0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6`
 **Authorization:** Roadmap tracking does not authorize implementation, commits, or deployment.
 
 ## Posisi Saat Ini
@@ -11,15 +11,16 @@
 **Phase 3 — PM Lifecycle & Planning Completion**
 
 **CURRENT:**
-- ADR-010 — Schedule & Machine Lifecycle — **IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE**.
-- TASK-006 — Machine & Schedule Lifecycle — **IN PROGRESS / Slice A IMPLEMENTED, VERIFIED, MANAGER ACCEPTED, ENGINEERING COMMITTED, CLOSED / PASS / PUBLISHED**.
+- ADR-010 — Schedule & Machine Lifecycle — **IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / NOT DONE**.
+- TASK-006 — Machine & Schedule Lifecycle — **IN PROGRESS / Slices A-B IMPLEMENTED, VERIFIED, MANAGER ACCEPTED, ENGINEERING COMMITTED, CLOSED / PASS / PUBLISHED**.
 
 **NEXT:**
 
-- No implementation authorization is active. Slice A publication is complete; Slice B-E remain not started and not authorized.
+- No implementation authorization is active after Slice B publication; Slice C-E remain not started and not authorized.
 
 **AFTER:**
-- Preserve the dependency order `A → (B + C) → D → E`; no Slice B-E implementation is authorized.
+
+- Preserve the dependency order `A → (B + C) → D → E`; no Slice C-E implementation is authorized.
 
 ## Phase Tracker
 
@@ -28,7 +29,7 @@
 | Phase 0 — Current Work Closure & Development Baseline | CLOSED / PASS | Historical closure complete. |
 | Phase 1 — Repository & Schema Integration Baseline | CLOSED / EXIT GATE PASS | Baseline accepted. |
 | Phase 2 — Historical Truth & Transaction Snapshot Foundation | CLOSED / EXIT GATE PASS / MANAGER ACCEPTED | All currently-known Phase 2 exit requirements pass. |
-| Phase 3 — PM Lifecycle & Planning Completion | IN PROGRESS / SLICE A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED | TASK-006 Slice A engineering and tracking closure are published; Slice B-E are not authorized. |
+| Phase 3 — PM Lifecycle & Planning Completion | IN PROGRESS / SLICES A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED | TASK-006 Slices A-B engineering and tracking closures are published; Slice C-E are not authorized. |
 | Phase 4+ | NOT STARTED / FUTURE | Preserve dependency order below. |
 
 ## ADR Tracker
@@ -150,27 +151,24 @@ Each entry uses **Sudah**, **Saat ini**, **Belum**, and **Next**. A task may be 
 
 ### ADR-010 — Schedule & Machine Lifecycle
 
-**Status: IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE**
+**Status: IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / NOT DONE**
 
 - **TASK-006 — Machine & Schedule Lifecycle**
   - Slice A — IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED
-  - Slice B — NOT STARTED / NOT AUTHORIZED
+  - Slice B — IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / CORRECTED / FINAL COMPLIANCE PASS / ENGINEERING COMMITTED / MANAGER ACCEPTED / CLOSED / PASS / PUBLISHED
   - Slice C — NOT STARTED / NOT AUTHORIZED
   - Slice D — NOT STARTED / NOT AUTHORIZED
   - Slice E — NOT STARTED / NOT AUTHORIZED
-- **Sudah:** Slice A lifecycle schema/data foundation, finite-state DB representation, compatibility write-through, policy/boundary foundation, MySQL verification, independent review, and manager acceptance.
-- **Saat ini:** Slice A engineering checkpoint `23d64f0c6369931820ae9ec1767e2ce3c52ed430` and tracking closure commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e` are published.
-- **Belum:** Schedule/Machine transition services, distributed reader/writer integration, lifecycle concurrency/UAT closure, and remaining slices.
-- **Next:** No implementation authorization is active. Await explicit manager authorization for the next slice; do not authorize Slice B-E yet.
+- **Sudah:** Slice A lifecycle schema/data foundation and Slice B authoritative Schedule transition service, compatibility enforcement, audit transaction, lock/provenance checks, and protected-execution behavior.
+- **Saat ini:** Slice B engineering checkpoint `0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6` is published; the tracking synchronization commit is published with this closure.
+- **Belum:** Machine transition authority, distributed reader/writer integration, lifecycle concurrency proof, UAT closure, and remaining slices.
+- **Next:** No implementation authorization is active. Await explicit manager authorization for Slice C and later; do not authorize Slice C-E yet.
 
 ## Shared TASK Mappings
 
-- **TASK-001:** ADR-005 — completed.
-- **TASK-002 [SHARED] — CLOSED / PASS:** mapped to ADR-001, ADR-006, and ADR-009 Slice A; ADR-009 overall remains PARTIAL and remaining scope is future/deferred.
-- **TASK-004:** ADR-004 — Slices 1–3 CLOSED / MANAGER ACCEPTED.
 - **TASK-005 [SHARED]:** ADR-004 supporting fake-storage/test-isolation task — CLOSED / PASS / MANAGER ACCEPTED.
 
-- **TASK-006:** ADR-010 — Machine & Schedule Lifecycle; Slice A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED; Slice B-E not authorized.
+- **TASK-006:** ADR-010 — Machine & Schedule Lifecycle; Slices A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED; Slice C-E not authorized.
 
 ## Phase 2 Exit Gate
 
@@ -375,7 +373,7 @@ Ini menjawab kekurangan terbesar pada Draft v1: V1 gate sebelumnya sudah mempuny
 
 ```text
 PHASE 3 — PM Lifecycle & Planning Completion
-Status: IN PROGRESS / SLICE A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+Status: IN PROGRESS / SLICES A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
 ADR-007 — Transaction Snapshot Strategy:
 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
@@ -387,16 +385,16 @@ RI-012 — PM Review Serialization:
 CLOSED / PASS / MANAGER ACCEPTED
 
 Accepted engineering checkpoint:
-develop / 23d64f0c6369931820ae9ec1767e2ce3c52ed430
+develop / 0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6
 
 Current management sequence:
 ADR-009 Slice A — No-Historical-Backlog Prevention
 COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED
 ADR-009 overall remains PARTIAL; remaining scope is future/deferred
 ↓
-TASK-006 / ADR-010 Slice A
-IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED / ENGINEERING COMMITTED
-Tracking publication is complete in `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e`; Slice B-E not started / not authorized
+TASK-006 / ADR-010 Slices A-B
+IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED
+Slice C-E not started / not authorized
 
 RI-012 proof is closed and must not be repeated without causal regression evidence. Do not reopen ADR-007 or TASK-002 for completed Slice A work.
 
@@ -714,7 +712,7 @@ Phase 1 exit gate: **CLOSED / EXIT GATE PASS / MANAGER ACCEPTED — 2026-09-07**
 
 **Last closed work:** ADR-009 Slice A — No-Historical-Backlog Prevention — **COMPLETE / ACCEPTED / MANAGER ACCEPTED**. ADR-009 overall remains **PARTIAL**.
 
-**Current work:** Phase 3 ADR-010 Slice A engineering and tracking publication are complete; Slice B-E remain not authorized.
+**Current work:** Phase 3 ADR-010 Slices A-B engineering and tracking publication are complete; Slice C-E remain not authorized.
 
 
 ## Objective
@@ -2108,14 +2106,14 @@ Roadmap progress tracking does not change the required authorization boundary or
 CURRENT POSITION
 
 PHASE 3 — PM Lifecycle & Planning Completion
-Status: IN PROGRESS / SLICE A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+Status: IN PROGRESS / SLICES A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
 CURRENT
 ADR-010 — Schedule & Machine Lifecycle
-IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE
+IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / NOT DONE
 TASK-006 — Machine & Schedule Lifecycle
-IN PROGRESS / Slice A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
-Slice B-E — NOT STARTED / NOT AUTHORIZED
+IN PROGRESS / Slices A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+Slice C-E — NOT STARTED / NOT AUTHORIZED
 
 
 
@@ -2129,7 +2127,7 @@ ADR-007 — Transaction Snapshot Strategy
 CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
 ACCEPTED ENGINEERING CHECKPOINT
-develop / 23d64f0c6369931820ae9ec1767e2ce3c52ed430
+develop / 0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6
 
 CLOSED PHASES
 Phase 0 — CLOSED / PASS
@@ -2137,10 +2135,10 @@ Phase 1 — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 Phase 2 — CLOSED / EXIT GATE PASS / MANAGER ACCEPTED
 
 CURRENT GATE
-No implementation authorization is active; await explicit manager authorization for the next slice.
+No implementation authorization is active after Slice B publication; await explicit manager authorization for Slice C and later.
 
 AFTER PHASE 2
-Phase 3 Slice A engineering and tracking closure are published. Slice B-E are not authorized.
+Phase 3 Slices A-B engineering and tracking closures are published. Slice C-E are not authorized.
 ```
 
 No Git index mutation or commit is authorized by this roadmap update alone.
@@ -2199,13 +2197,13 @@ Implementation authorization:
 NONE BY ROADMAP ALONE
 
 Current phase:
-Phase 3 — PM Lifecycle & Planning Completion — IN PROGRESS / SLICE A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
+Phase 3 — PM Lifecycle & Planning Completion — IN PROGRESS / SLICES A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED
 
 Current work:
-ADR-010 — IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE
+ADR-010 — IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / NOT DONE
 TASK-006 — Machine & Schedule Lifecycle
-IN PROGRESS / Slice A IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED
-Slice B-E — NOT STARTED / NOT AUTHORIZED
+IN PROGRESS / Slices A-B IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED
+Slice C-E — NOT STARTED / NOT AUTHORIZED
 ADR-009 Slice A — COMPLETE / ACCEPTED / IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED
 ADR-009 overall: PARTIAL; remaining scope is future/deferred
 
@@ -2216,11 +2214,11 @@ RI-012:
 IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / CLOSED / PASS / MANAGER ACCEPTED
 
 Accepted engineering checkpoint:
-develop / 23d64f0c6369931820ae9ec1767e2ce3c52ed430 / staged 0
+develop / 0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6 / staged 0
 
 Next management handoff:
 Await explicit manager selection of the next slice; no implementation authorization is active.
 
 Next implementation authorization:
-None; Slice B-E remain NOT STARTED / NOT AUTHORIZED.
+None; Slice C-E remain NOT STARTED / NOT AUTHORIZED.
 ```

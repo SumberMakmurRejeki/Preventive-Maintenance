@@ -11,14 +11,14 @@ summary: >-
   menjaga execution kanonis yang telah dimulai agar dapat selesai melalui review
   normal.
 
-  Pekerjaan dibagi menjadi lima tahap berurutan. Slice A telah diterima secara engineering dan tracking publication-nya telah dipublikasikan. Slice B sampai E tetap tidak terotorisasi sampai ketergantungan sebelumnya diterima secara independen.
+  Pekerjaan dibagi menjadi lima tahap berurutan. Slice A dan Slice B telah diterima secara engineering dan tracking publication-nya telah dipublikasikan. Slice C sampai E tetap tidak terotorisasi sampai ketergantungan berikutnya diterima secara independen.
 in_scope:
   - id: "TASK-006/A"
     outcome: "Mendefinisikan state lifecycle, effective_live_from, LifecyclePolicy, bounded is_active compatibility write-through, dua floor boundary, dan rencana migrasi additive."
     status: "IMPLEMENTED / VERIFIED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED"
   - id: "TASK-006/B"
     outcome: "Menerapkan transition authority Schedule ACTIVE, PAUSED, dan ENDED."
-    status: "NOT STARTED / NOT AUTHORIZED"
+    status: "IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / CORRECTED / FINAL COMPLIANCE PASS / ENGINEERING COMMITTED / MANAGER ACCEPTED / CLOSED / PASS / PUBLISHED"
   - id: "TASK-006/C"
     outcome: "Menerapkan transition authority Machine ACTIVE, INACTIVE, RETIRED, dan recommission."
     status: "NOT STARTED / NOT AUTHORIZED"
@@ -49,9 +49,9 @@ constraints:
   - "Urutan lock lifecycle/execution: Machine → PmSchedule → PmScheduleDate → PmExecution → items/media; workflow pembuatan schedule eksplisit memakai PmChecksheet → Machine → PmSchedule → PmScheduleDate."
 success_criteria:
   - "TASK-006 memiliki satu plan kanonis dengan lima slice, dependency A → (B + C) → D → E, dan otorisasi eksplisit per slice."
-  - "Status, state machine, legacy mapping, compatibility write-through, dua boundary lifecycle, recommission, dan read-side contract ADR-010 terdokumentasi; Slice A dinyatakan selesai secara engineering, sedangkan Slice B-E tetap tidak dinyatakan selesai."
+  - "Status, state machine, legacy mapping, compatibility write-through, dua boundary lifecycle, recommission, dan read-side contract ADR-010 terdokumentasi; Slice A dan B dinyatakan selesai secara engineering, sedangkan Slice C-E tetap tidak dinyatakan selesai."
   - "Slice A memiliki scope, schema minimum, migration/backfill, compatibility invariant, dan test plan yang dapat dieksekusi tanpa mengubah histori."
-  - "Dokumen tracking menyatakan Phase 3 in progress, ADR-010 belum selesai, TASK-002 tetap closed, ADR-009 Slice A tidak dibuka kembali, dan Historical PM belum diimplementasikan."
+  - "Slice B memiliki authority Schedule, audit transaction, lock/provenance checks, compatibility behavior, protected-execution behavior, dan verification evidence yang tercatat; distributed enforcement tetap menjadi scope Slice D."
 references:
   - "Docs/roadmap.md"
   - "Docs/decisions/ADR-010-schedule-and-machine-lifecycle.md"

@@ -2,7 +2,7 @@
 
 ## Target
 
-`Machine`, `PmSchedule`, `PmScheduleDate`, and their current `is_active`-based eligibility are shared domain inputs. TASK-006 Slice A now adds explicit lifecycle state and effective-live boundaries without changing `operational_from`.
+`Machine`, `PmSchedule`, `PmScheduleDate`, and their current `is_active`-based eligibility are shared domain inputs. TASK-006 Slice A adds explicit lifecycle state and effective-live boundaries; Slice B adds authoritative Schedule transition mutation without changing `operational_from`.
 
 ## Dependents
 
@@ -67,15 +67,11 @@ boundary. Slice A therefore defines, but does not apply, separate:
 
 ## Affected Tasks and Decisions
 
-- TASK-006 / ADR-010 owns the lifecycle state, transition authority, and
-  distributed-reader integration.
-- ADR-009 remains partial. Its `operational_from` provenance and
-  no-historical-backlog contract are dependencies, not implementation scope.
+- TASK-006 / ADR-010 owns lifecycle state, Schedule transition authority, and later distributed-reader integration.
+- ADR-009 remains partial. Its `operational_from` provenance and no-historical-backlog contract are dependencies, not implementation scope.
 - TASK-002 remains CLOSED / PASS and must not be reopened.
-- ADR-003, ADR-004, ADR-005, ADR-006, and ADR-007 remain closed unless a causal
-  regression is found.
-- Historical PM and reporting classification for preserved pre-boundary mutable
-  occurrences are deferred.
+- ADR-003, ADR-004, ADR-005, ADR-006, and ADR-007 remain closed unless a causal regression is found.
+- Historical PM and reporting classification for preserved pre-boundary mutable occurrences are deferred.
 
 ## Existing Test Coverage
 
@@ -102,7 +98,19 @@ Slice A is implemented, verified, independently reviewed, manager accepted, and 
 - Scratch/fixture cleanup: zero residual; real machines and `pm_schedules` unchanged during RED.
 - `LifecycleSchemaTest`, `LifecyclePolicyTest`, changed-writer regressions, independent review, and manager acceptance: PASS/accepted.
 
-Transition services, distributed reader/writer cutover, lifecycle concurrency proof, UAT, and TASK-006 closure remain future work in Slice B-E.
+## Slice B Result
+
+Slice B is implemented, verified, independently reviewed, corrected, manager accepted, and committed at `0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6`. Its tracking synchronization is published with this closure.
+
+- Schedule transition authority covers ACTIVE ↔ PAUSED and ACTIVE/PAUSED → ENDED; ordinary ENDED revival fails closed.
+- Mandatory reason, same-transaction activity audit, rollback on audit failure, compatibility projection, effective-live resume boundary, and preserved operational fields are enforced.
+- Machine → PmSchedule locking and parent provenance revalidation are enforced.
+- Already canonical IN_PROGRESS execution may complete through approval; no duplicate execution or protected-history rewrite is introduced.
+- ScheduleLifecycleServiceTest: 13 passed / 46 assertions; ScheduleLifecycleWriterGuardTest: 4 passed / 17 assertions.
+- LifecyclePolicyTest: 9 passed / 41 assertions; PmChecksheetScheduleUpdatePreviewApplyTest: 25 passed / 80 assertions.
+- Started-execution completion proof, PHP lint, and git diff check: PASS.
+
+Distributed reader/writer cutover, lifecycle concurrency proof, UAT, and TASK-006 closure remain future work in Slice C-E.
 
 ## Remaining Gaps for Later Slices
 
@@ -120,4 +128,7 @@ work, or reinterpret preserved transactions.
 
 ## Recommended Action
 
-Tracking publication for Slice A is complete. Do not claim Schedule/Machine transition services or distributed reader cutover are implemented, and do not authorize Slice B-E without the required dependency and review gates.
+Slice B engineering and tracking publication are complete. Do not claim Machine
+transition services, distributed reader/writer cutover, lifecycle concurrency
+proof, or TASK-006 closure are implemented. Await explicit authorization for
+Slice C-E.

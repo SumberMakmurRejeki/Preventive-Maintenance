@@ -1,15 +1,15 @@
 # Active Work
 
-**Last Updated:** 2026-09-14
+**Last Updated:** 2026-09-15
 
-**Roadmap Phase:** Phase 3 — PM Lifecycle & Planning Completion (**IN PROGRESS / SLICE A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**)
+**Roadmap Phase:** Phase 3 — PM Lifecycle & Planning Completion (**IN PROGRESS / SLICES A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**)
 **Authoritative Roadmap:** `Docs/roadmap.md`
-**Current Work:** TASK-006 / ADR-010 Slice A tracking closure is published.
-**Status:** ADR-010 **IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE**; TASK-006 **IN PROGRESS / Slice A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**.
+**Current Work:** TASK-006 / ADR-010 Slice B tracking closure is published.
+**Status:** ADR-010 **IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / NOT DONE**; TASK-006 **IN PROGRESS / Slices A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**.
 **Last Closed Major Item:** ADR-009 Slice A — No-Historical-Backlog Prevention (**COMPLETE / ACCEPTED / MANAGER ACCEPTED**)
-**Accepted Engineering Checkpoint:** `23d64f0c6369931820ae9ec1767e2ce3c52ed430`
-**Next Action:** No implementation authorization is active; await explicit manager authorization for the next slice.
-**After:** Slice B-E remain **NOT STARTED / NOT AUTHORIZED**. Preserve `A → (B + C) → D → E`.
+**Accepted Engineering Checkpoint:** `0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6`
+**Next Action:** No implementation authorization is active after Slice B publication; await explicit manager authorization for Slice C and later.
+**After:** Slice C-E remain **NOT STARTED / NOT AUTHORIZED**. Preserve `A → (B + C) → D → E`.
 
 ADR-007 remains closed / pass / manager accepted / published. TASK-002 remains closed. ADR-009 overall remains PARTIAL; its accepted Slice A must not be reopened. Historical PM is not implemented.
 
@@ -62,15 +62,15 @@ R4 NULL/manual control tidak berlaku karena current FK adalah NOT NULL.
 
 **Current Work:** TASK-006 — Machine & Schedule Lifecycle under ADR-010.
 
-**Phase 3:** **IN PROGRESS / SLICE A CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**.
+**Phase 3:** **IN PROGRESS / SLICES A-B CLOSED / PASS / MANAGER ACCEPTED / PUBLISHED**.
 
-**ADR-010:** **IMPLEMENTATION IN PROGRESS / SLICE A ACCEPTED / NOT DONE**.
+**ADR-010:** **IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / NOT DONE**.
 
-**TASK-006:** **IN PROGRESS**. Slice A is implemented, verified, independently reviewed, manager accepted, engineering committed, and published in tracking commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e`. Slice B-E remain **NOT STARTED / NOT AUTHORIZED**.
+**TASK-006:** **IN PROGRESS**. Slices A-B are implemented, verified, independently reviewed, manager accepted, engineering committed, and published. Slice C-E remain **NOT STARTED / NOT AUTHORIZED**.
 
 **Dependency:** `Slice A → (Slice B + Slice C) → Slice D → Slice E`.
 
-**Next Action:** No implementation authorization is active; await explicit manager authorization for the next slice. No Slice B-E authorization exists.
+**Next Action:** No implementation authorization is active after Slice B publication; await explicit manager authorization for Slice C and later. No Slice C-E authorization exists.
 
 **Preserved position:** ADR-009 overall remains PARTIAL; ADR-009 Slice A is complete/accepted and not reopened. TASK-002 remains closed. Historical PM remains unimplemented.
 
@@ -84,11 +84,13 @@ ADR-009 Slice A: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / ACCEPTED / 
 
 TASK-006 Slice A: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / CORRECTIONS VERIFIED / ACCEPTED / MANAGER ACCEPTED / CLOSED / PASS / PUBLISHED** — engineering checkpoint `23d64f0c6369931820ae9ec1767e2ce3c52ed430`; tracking commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e`.
 
+TASK-006 Slice B: **IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / CORRECTIONS VERIFIED / ACCEPTED / MANAGER ACCEPTED / CLOSED / PASS / PUBLISHED** — engineering checkpoint `0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6`; tracking synchronization commit is published with this closure.
+
 Historical proof used mutable Machine name and Location name changes. `machine_code` rename proof is not claimed because it is immutable under the current PRIME contract.
 
 ### Accepted engineering checkpoint
 
-Accepted engineering checkpoint: `23d64f0c6369931820ae9ec1767e2ce3c52ed430`; staged files `0`; tracking closure commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e` is published; ambient work remains intentionally dirty and uncommitted.
+Accepted engineering checkpoint: `0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6`; staged files `0`; engineering publication is verified; ambient work remains intentionally dirty and uncommitted.
 
 ### Historical TASK-004 verification sections
 
