@@ -14,6 +14,7 @@ use App\Services\PM\PmScheduleDateReconciler;
 use App\Services\PM\StalePreviewException;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Layanan preview dan apply untuk update jadwal PM checksheet.
@@ -511,22 +512,53 @@ class PmScheduleUpdateService
                 ],
             );
 
-            PmSchedule::query()->updateOrCreate(
-                ['pm_checksheet_machine_id' => $assignment->id],
-                [
-                    'frequency_type' => $schedulePayload['frequency_type'],
-                    'weekly_days' => $schedulePayload['frequency_type'] === 'weekly'
-                        ? array_values($schedulePayload['weekly_days'] ?? [])
-                        : null,
-                    'monthly_day' => $schedulePayload['frequency_type'] === 'monthly'
-                        ? $schedulePayload['monthly_day']
-                        : null,
-                    'operational_from' => $window['start_date'],
-                    'start_date' => $window['start_date'],
-                    'generate_until' => $window['generate_until'],
+            $existingSchedule = PmSchedule::query()
+                ->where('pm_checksheet_machine_id', $assignment->id)
+                ->first();
+
+            // Lifecycle authority owns pause/resume/end. Existing ENDED remains
+            // rejected; existing PAUSED may be configured but must not be
+            // implicitly resumed or reconciled into new operational work.
+            if ($existingSchedule !== null && $existingSchedule->lifecycle_status === 'ended') {
+                throw ValidationException::withMessages([
+                    'schedule' => 'Jadwal PM ini sudah berstatus ended sehingga tidak dapat diaktifkan kembali; era jadwal lama bersifat terminal.',
+                ]);
+            }
+
+            $attributes = [
+                'frequency_type' => $schedulePayload['frequency_type'],
+                'weekly_days' => $schedulePayload['frequency_type'] === 'weekly'
+                    ? array_values($schedulePayload['weekly_days'] ?? [])
+                    : null,
+                'monthly_day' => $schedulePayload['frequency_type'] === 'monthly'
+                    ? $schedulePayload['monthly_day']
+                    : null,
+                'operational_from' => $window['start_date'],
+                'start_date' => $window['start_date'],
+                'generate_until' => $window['generate_until'],
+            ];
+
+            // Schedule baru dan ACTIVE existing mempertahankan behavior lama.
+            // PAUSED tidak diberi projection(true), sehingga lifecycle status,
+            // is_active, effective_live_from, dan queue dates tetap preserved.
+            if ($existingSchedule === null || $existingSchedule->lifecycle_status === 'active') {
+                $attributes = [
+                    ...$attributes,
                     ...$this->lifecyclePolicy->scheduleProjection(true),
-                ],
+                ];
+            }
+
+            $schedule = PmSchedule::query()->updateOrCreate(
+                ['pm_checksheet_machine_id' => $assignment->id],
+                $attributes,
             );
+
+            // Materialisasi hanya dijalankan untuk schedule live (baru/ACTIVE).
+            // Schedule PAUSED yang dipertahankan tidak boleh memicu pembuatan
+            // atau restore occurrence sebagai efek samping edit konfigurasi.
+            if ($existingSchedule === null || $existingSchedule->lifecycle_status === 'active') {
+                $this->reconciler->reconcile($schedule);
+            }
         }
     }
 }
