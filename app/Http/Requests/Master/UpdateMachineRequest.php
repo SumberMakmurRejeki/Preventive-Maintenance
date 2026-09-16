@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Master;
 
+use App\Models\Machine;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,14 +21,13 @@ class UpdateMachineRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $machine = \App\Models\Machine::query()->find($this->route('machineId'));
+        $machine = Machine::query()->find($this->route('machineId'));
 
         $this->merge([
             'machine_id' => $machine?->id,
             'machine_code' => strtoupper(trim((string) $this->input('machine_code'))),
             'machine_name' => trim((string) $this->input('machine_name')),
             'description' => trim((string) $this->input('description')),
-            'is_active' => filter_var($this->input('is_active', true), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? true,
             'modal_action' => 'edit',
         ]);
     }
@@ -34,11 +35,11 @@ class UpdateMachineRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, array<int, \Illuminate\Contracts\Validation\ValidationRule|string>|string>
+     * @return array<string, array<int, ValidationRule|string>|string>
      */
     public function rules(): array
     {
-        $machine = \App\Models\Machine::query()->findOrFail($this->route('machineId'));
+        $machine = Machine::query()->findOrFail($this->route('machineId'));
 
         return [
             'location_id' => [
@@ -54,7 +55,6 @@ class UpdateMachineRequest extends FormRequest
             ],
             'machine_name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
-            'is_active' => ['required', 'boolean'],
             'machine_id' => ['nullable', 'integer'],
             'modal_action' => ['nullable', 'string'],
         ];

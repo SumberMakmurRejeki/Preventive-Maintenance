@@ -1031,6 +1031,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setMachineFieldValue('[data-machine-form-field="name"]', '');
             setMachineFieldValue('[data-machine-form-field="location"]', '');
             setMachineFieldValue('[data-machine-form-field="active"]', '1');
+
+            // Mode create menampilkan kembali pilihan status awal mesin.
+            const createActiveWrapper = document.querySelector('[data-machine-active-wrapper]');
+            if (createActiveWrapper) {
+                createActiveWrapper.hidden = false;
+            }
             setMachineFieldValue('[data-machine-form-field="description"]', '');
 
             if (machineCodeField) {
@@ -1056,7 +1062,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 setMachineFieldValue('[data-machine-form-field="code"]', button.getAttribute('data-machine-code') ?? '');
                 setMachineFieldValue('[data-machine-form-field="name"]', button.getAttribute('data-machine-name') ?? '');
                 setMachineFieldValue('[data-machine-form-field="location"]', button.getAttribute('data-machine-location-id') ?? '');
-                setMachineFieldValue('[data-machine-form-field="active"]', button.getAttribute('data-machine-active') ?? '1');
+                // TASK-006 Slice C: edit biasa tidak boleh memutasi lifecycle.
+                // Field status disembunyikan pada mode edit; authority tetap di
+                // sisi server lewat whitelist payload MachineService.
+                const machineActiveWrapper = document.querySelector('[data-machine-active-wrapper]');
+                if (machineActiveWrapper) {
+                    machineActiveWrapper.hidden = true;
+                }
                 setMachineFieldValue('[data-machine-form-field="description"]', button.getAttribute('data-machine-description') ?? '');
 
                 if (machineCodeField) {
@@ -1213,6 +1225,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const submitNode = document.querySelector('[data-machine-status-submit]');
                 const iconWrapNode = document.querySelector('[data-machine-status-icon-wrap]');
                 const iconNode = document.querySelector('[data-machine-status-icon]');
+                // Alasan selalu dikosongkan saat action berbeda dibuka agar tidak terkirim lintas Machine.
+                const reasonNode = document.querySelector('[data-machine-status-reason]');
+                if (reasonNode instanceof HTMLTextAreaElement) {
+                    reasonNode.value = '';
+                }
                 const variant = button.getAttribute('data-machine-status-variant') ?? 'warning';
 
                 statusForm?.setAttribute('action', button.getAttribute('data-machine-status-url') ?? '#');

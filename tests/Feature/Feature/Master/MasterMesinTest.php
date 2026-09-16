@@ -146,7 +146,8 @@ class MasterMesinTest extends TestCase
             'machine_code' => 'MSN-001',
             'machine_name' => 'Genset Updated',
             'description' => 'Deskripsi baru',
-            'is_active' => '1',
+            // Payload lifecycle yang disuntikkan ke update biasa tidak boleh mengubah state.
+            'is_active' => '0',
         ]);
 
         $response->assertRedirect('/pm/master-mesin');
@@ -159,6 +160,7 @@ class MasterMesinTest extends TestCase
         $this->assertSame('Genset Updated', $machine->machine_name);
 
         $this->assertSame('active', $machine->lifecycle_status);
+        $this->assertTrue($machine->is_active);
     }
 
     public function test_machine_code_cannot_be_changed_after_creation(): void
@@ -211,6 +213,7 @@ class MasterMesinTest extends TestCase
             'machine_name' => 'Forklift B',
             'qr_token' => 'qr-msn-002',
             'is_active' => false,
+            'lifecycle_status' => 'inactive',
         ]);
 
         $response = $this->actingAs($this->admin)->get("/pm/master-mesin?search=Forklift&location_id={$secondLocation->id}&status=inactive");
@@ -342,7 +345,7 @@ class MasterMesinTest extends TestCase
         Storage::disk('public')->put('qr-codes/msn-001.svg', '<svg></svg>');
 
         $this->actingAs($this->admin)
-            ->patch("/pm/master-mesin/{$machine->id}/nonaktifkan")
+            ->patch("/pm/master-mesin/{$machine->id}/nonaktifkan", ['reason' => 'Inspeksi preventive'])
             ->assertRedirect('/pm/master-mesin');
 
         $this->assertDatabaseHas('machines', [
@@ -352,7 +355,7 @@ class MasterMesinTest extends TestCase
         ]);
 
         $this->actingAs($this->admin)
-            ->patch("/pm/master-mesin/{$machine->id}/aktifkan")
+            ->patch("/pm/master-mesin/{$machine->id}/aktifkan", ['reason' => 'Inspeksi selesai'])
             ->assertRedirect('/pm/master-mesin');
 
         $this->assertDatabaseHas('machines', [
@@ -369,6 +372,85 @@ class MasterMesinTest extends TestCase
             'id' => $machine->id,
         ]);
         Storage::disk('public')->assertMissing('qr-codes/msn-001.svg');
+    }
+
+    /**
+     * TASK-006 Slice C: transisi ilegal RETIRED -> ACTIVE harus ditolak pada
+     * HTTP boundary sebagai error bisnis terkendali, bukan uncontrolled 500.
+     */
+    public function test_illegal_activation_of_retired_machine_returns_controlled_error(): void
+    {
+        $retired = $this->makeMachineRow('MSN-ILL-ACT', 'Mesin Pensiun Ilegal', $this->activeLocation->id, 'retired');
+
+        $response = $this->actingAs($this->admin)
+            ->patch("/pm/master-mesin/{$retired->id}/aktifkan", ['reason' => 'Coba aktivasi ulang mesin pensiun']);
+
+        // Boundary mengembalikan admin ke halaman master mesin dengan error
+        // terkendali, tanpa flash success palsu.
+        $response->assertRedirect('/pm/master-mesin');
+        $response->assertSessionHas('flash_error');
+        $response->assertSessionMissing('flash_success');
+
+        // State lifecycle tetap RETIRED: tidak ada aktivasi ordinary yang terjadi.
+        $this->assertSame('retired', $retired->fresh()->lifecycle_status);
+        $this->assertFalse((bool) $retired->fresh()->is_active);
+
+        // Tidak boleh tercipta audit transisi sukses yang menyesatkan.
+        $this->assertDatabaseMissing('user_activity_logs', [
+            'module_name' => 'master_mesin',
+            'action' => 'lifecycle_transition',
+            'record_id' => $retired->id,
+        ]);
+    }
+
+    /**
+     * Semua aksi lifecycle harus menolak transisi ilegal dari state terminal
+     * secara konsisten: nonaktifkan dan pensiunkan atas mesin RETIRED.
+     */
+    public function test_illegal_deactivate_and_retire_on_retired_machine_are_handled_consistently(): void
+    {
+        $retired = $this->makeMachineRow('MSN-ILL-ALL', 'Mesin Pensiun Semua Aksi', $this->activeLocation->id, 'retired');
+
+        $deactivate = $this->actingAs($this->admin)
+            ->patch("/pm/master-mesin/{$retired->id}/nonaktifkan", ['reason' => 'Coba nonaktifkan mesin pensiun']);
+        $deactivate->assertRedirect('/pm/master-mesin');
+        $deactivate->assertSessionHas('flash_error');
+
+        $retire = $this->actingAs($this->admin)
+            ->patch("/pm/master-mesin/{$retired->id}/pensiunkan", ['reason' => 'Coba pensiunkan ulang mesin pensiun']);
+        $retire->assertRedirect('/pm/master-mesin');
+        $retire->assertSessionHas('flash_error');
+
+        $this->assertSame('retired', $retired->fresh()->lifecycle_status);
+        $this->assertFalse((bool) $retired->fresh()->is_active);
+
+        $this->assertDatabaseMissing('user_activity_logs', [
+            'module_name' => 'master_mesin',
+            'action' => 'lifecycle_transition',
+            'record_id' => $retired->id,
+        ]);
+    }
+
+    /**
+     * Proteksi authorization dan validasi request pada HTTP boundary lifecycle
+     * harus tetap utuh: operator ditolak 403 dan reason wajib tervalidasi.
+     */
+    public function test_lifecycle_actions_keep_authorization_and_reason_validation(): void
+    {
+        $machine = $this->makeMachineRow('MSN-ILL-GUARD', 'Mesin Proteksi Aksi', $this->activeLocation->id, 'active');
+
+        // Authorization: operator tidak boleh memicu aksi lifecycle.
+        $this->actingAs($this->operator)
+            ->patch("/pm/master-mesin/{$machine->id}/aktifkan", ['reason' => 'Aksi operator'])
+            ->assertRedirect('/403');
+
+        // Request validation: reason wajib sebelum service lifecycle dipanggil.
+        $this->actingAs($this->admin)
+            ->patch("/pm/master-mesin/{$machine->id}/aktifkan", [])
+            ->assertSessionHasErrors('reason');
+
+        $this->assertSame('active', $machine->fresh()->lifecycle_status);
+        $this->assertTrue((bool) $machine->fresh()->is_active);
     }
 
     public function test_inactive_location_cannot_be_used_when_creating_machine(): void
@@ -1043,6 +1125,141 @@ class MasterMesinTest extends TestCase
             'scheduled_date' => now()->subDay(),
             'status' => 'scheduled',
             'generated_at' => now(),
+        ]);
+    }
+
+    // =========================================================================
+    // TASK-006 Slice C (Correction 5-7): filter lokasi/status dan status detail
+    // =========================================================================
+
+    /**
+     * Filter status memakai nilai lifecycle kanonik yang sama dengan
+     * atribut row, sehingga memilih satu status tidak menyembunyikan semua baris.
+     */
+    public function test_machine_filters_use_canonical_lifecycle_values(): void
+    {
+        $retired = $this->makeMachineRow('MSN-CAN-RET', 'Mesin Pensiun', $this->inactiveLocation->id, 'retired');
+        $this->makeMachineRow('MSN-CAN-INACT', 'Mesin Nonaktif', $this->inactiveLocation->id, 'inactive');
+        $this->makeMachineRow('MSN-CAN-ACT', 'Mesin Aktif', $this->activeLocation->id, 'active');
+
+        // Halaman memakai nilai kanonik pada option filter dan pada row.
+        $page = $this->actingAs($this->admin)->get('/pm/master-mesin');
+        $page->assertOk();
+        $page->assertSee('value="active"', false);
+        $page->assertSee('value="inactive"', false);
+        $page->assertSee('value="retired"', false);
+        $page->assertDontSee('value="aktif"', false);
+        $page->assertDontSee('value="nonaktif"', false);
+        $page->assertSee('data-status="retired"', false);
+        $page->assertSee('data-status="active"', false);
+
+        // RETIRED hanya muncul untuk filter retired.
+        $retiredFilter = $this->actingAs($this->admin)->get('/pm/master-mesin?status=retired');
+        $retiredFilter->assertOk();
+        $retiredFilter->assertSee($retired->machine_code);
+        $retiredFilter->assertDontSee('MSN-CAN-INACT');
+        $retiredFilter->assertDontSee('MSN-CAN-ACT');
+
+        // INACTIVE hanya muncul untuk filter inactive.
+        $inactiveFilter = $this->actingAs($this->admin)->get('/pm/master-mesin?status=inactive');
+        $inactiveFilter->assertOk();
+        $inactiveFilter->assertSee('MSN-CAN-INACT');
+        $inactiveFilter->assertDontSee($retired->machine_code);
+        $inactiveFilter->assertDontSee('MSN-CAN-ACT');
+    }
+
+    /**
+     * Filter lokasi dan filter lifecycle harus dapat dipakai bersamaan tanpa
+     * saling meniadakan.
+     */
+    public function test_location_and_lifecycle_filters_coexist(): void
+    {
+        $this->makeMachineRow('MSN-LOC-A-ACT', 'Mesin A Aktif', $this->activeLocation->id, 'active');
+        $this->makeMachineRow('MSN-LOC-B-ACT', 'Mesin B Aktif', $this->inactiveLocation->id, 'active');
+        $this->makeMachineRow('MSN-LOC-B-INA', 'Mesin B Nonaktif', $this->inactiveLocation->id, 'inactive');
+        $this->makeMachineRow('MSN-LOC-B-RET', 'Mesin B Pensiun', $this->inactiveLocation->id, 'retired');
+
+        // Lokasi saja: hanya mesin lokasi tersebut.
+        $byLocation = $this->actingAs($this->admin)->get("/pm/master-mesin?location_id={$this->activeLocation->id}");
+        $byLocation->assertOk();
+        $byLocation->assertSee('MSN-LOC-A-ACT');
+        $byLocation->assertDontSee('MSN-LOC-B-ACT');
+        $byLocation->assertDontSee('MSN-LOC-B-INA');
+        $byLocation->assertDontSee('MSN-LOC-B-RET');
+
+        // Lokasi + lifecycle: irisan keduanya.
+        $combined = $this->actingAs($this->admin)->get("/pm/master-mesin?location_id={$this->inactiveLocation->id}&status=active");
+        $combined->assertOk();
+        $combined->assertSee('MSN-LOC-B-ACT');
+        $combined->assertDontSee('MSN-LOC-A-ACT');
+        $combined->assertDontSee('MSN-LOC-B-INA');
+        $combined->assertDontSee('MSN-LOC-B-RET');
+
+        // Lokasi + lifecycle inactive.
+        $inactiveOnly = $this->actingAs($this->admin)->get("/pm/master-mesin?location_id={$this->inactiveLocation->id}&status=inactive");
+        $inactiveOnly->assertOk();
+        $inactiveOnly->assertSee('MSN-LOC-B-INA');
+        $inactiveOnly->assertDontSee('MSN-LOC-B-ACT');
+        $inactiveOnly->assertDontSee('MSN-LOC-A-ACT');
+    }
+
+    /**
+     * Scope lokasi harus tetap terjaga pada halaman pagination berikutnya.
+     */
+    public function test_location_filter_scope_survives_pagination(): void
+    {
+        for ($index = 1; $index <= 11; $index++) {
+            $this->makeMachineRow(sprintf('MSN-PAGE-A-%02d', $index), "Mesin Paginasi {$index}", $this->activeLocation->id, 'active');
+        }
+        $this->makeMachineRow('MSN-PAGE-B-01', 'Mesin Lokasi Lain', $this->inactiveLocation->id, 'active');
+
+        $firstPage = $this->actingAs($this->admin)->get("/pm/master-mesin?location_id={$this->activeLocation->id}");
+        $firstPage->assertOk();
+        $firstPage->assertSee('MSN-PAGE-A-01');
+        $firstPage->assertDontSee('MSN-PAGE-B-01');
+
+        $secondPage = $this->actingAs($this->admin)->get("/pm/master-mesin?location_id={$this->activeLocation->id}&page=2");
+        $secondPage->assertOk();
+        $secondPage->assertSee('MSN-PAGE-A-11');
+        $secondPage->assertDontSee('MSN-PAGE-B-01');
+    }
+
+    /**
+     * Detail mesin RETIRED harus tampil sebagai Pensiun, bukan Nonaktif, dan
+     * aksi aktivasi ordinary tidak boleh tersedia untuk mesin pensiun.
+     */
+    public function test_retired_machine_detail_and_actions_are_distinguished(): void
+    {
+        $retired = $this->makeMachineRow('MSN-DET-RET', 'Mesin Pensiun Detail', $this->activeLocation->id, 'retired');
+        $this->makeMachineRow('MSN-DET-INA', 'Mesin Nonaktif Detail', $this->activeLocation->id, 'inactive');
+        $this->makeMachineRow('MSN-DET-ACT', 'Mesin Aktif Detail', $this->activeLocation->id, 'active');
+
+        $response = $this->actingAs($this->admin)->get('/pm/master-mesin');
+        $response->assertOk();
+
+        // Tiga status dibedakan pada atribut detail modal.
+        $response->assertSee('data-machine-status="Aktif"', false);
+        $response->assertSee('data-machine-status="Nonaktif"', false);
+        $response->assertSee('data-machine-status="Pensiun"', false);
+
+        // Mesin pensiun tidak menawarkan aktivasi ordinary.
+        $response->assertDontSee(route('master-mesin.activate', $retired->id), false);
+        $response->assertDontSee(route('master-mesin.deactivate', $retired->id), false);
+        $response->assertDontSee(route('master-mesin.retire', $retired->id), false);
+    }
+
+    /**
+     * Buat satu mesin dengan lifecycle kanonik untuk uji filter/daftar.
+     */
+    private function makeMachineRow(string $code, string $name, int $locationId, string $lifecycleStatus): Machine
+    {
+        return Machine::query()->create([
+            'location_id' => $locationId,
+            'machine_code' => $code,
+            'machine_name' => $name,
+            'qr_token' => 'qr-'.strtolower($code),
+            'is_active' => $lifecycleStatus === 'active',
+            'lifecycle_status' => $lifecycleStatus,
         ]);
     }
 }

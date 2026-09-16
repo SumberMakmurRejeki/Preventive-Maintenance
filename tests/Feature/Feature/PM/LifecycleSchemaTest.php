@@ -131,8 +131,9 @@ class LifecycleSchemaTest extends TestCase
         $locationId = DB::table('machines')->where('id', $ids['machine_active'])->value('location_id');
         $assignmentId = DB::table('pm_schedules')->where('id', $ids['schedule_active'])->value('pm_checksheet_machine_id');
 
+        $stateMachineIds = [];
         foreach (['active', 'inactive', 'retired'] as $state) {
-            DB::table('machines')->insert([
+            $stateMachineIds[$state] = DB::table('machines')->insertGetId([
                 'location_id' => $locationId,
                 'machine_code' => 'MC-FS-'.$state,
                 'machine_name' => 'Finite State '.$state,
@@ -144,13 +145,38 @@ class LifecycleSchemaTest extends TestCase
             ]);
         }
 
+        // TASK-006 Slice C: satu era non-terminal per assignment, sehingga setiap
+        // state harus ditulis pada assignment sendiri agar tidak melanggar
+        // unique index current era yang sudah diterapkan migrasi Slice C.
+        $checksheetId = DB::table('pm_checksheet_machines')
+            ->where('id', $assignmentId)
+            ->value('pm_checksheet_id');
+
         foreach (['active', 'paused', 'ended'] as $state) {
+            $stateMachineId = DB::table('machines')->insertGetId([
+                'location_id' => $locationId,
+                'machine_code' => 'MC-SCH-'.$state,
+                'machine_name' => 'Schedule State '.$state,
+                'qr_token' => 'qr-sch-'.$state,
+                'is_active' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            $stateAssignmentId = DB::table('pm_checksheet_machines')->insertGetId([
+                'pm_checksheet_id' => $checksheetId,
+                'machine_id' => $stateMachineId,
+                'assigned_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
             DB::table('pm_schedules')->insert([
-                'pm_checksheet_machine_id' => $assignmentId,
+                'pm_checksheet_machine_id' => $stateAssignmentId,
                 'frequency_type' => 'daily',
                 'start_date' => '2026-09-01',
                 'generate_until' => '2027-09-01',
-                'is_active' => true,
+                'is_active' => $state === 'active',
                 'lifecycle_status' => $state,
                 'created_at' => $now,
                 'updated_at' => $now,

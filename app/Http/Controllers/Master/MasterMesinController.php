@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Master;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Master\MachineLifecycleReasonRequest;
 use App\Http\Requests\Master\StoreMachineRequest;
 use App\Http\Requests\Master\UpdateMachineRequest;
 use App\Models\Location;
 use App\Models\Machine;
 use App\Services\Auth\PrimeAuthService;
 use App\Services\Master\MachineService;
+use App\Services\PM\InvalidMachineTransitionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -35,8 +37,10 @@ class MasterMesinController extends Controller
                         ->orWhere('machine_name', 'like', "%{$search}%");
                 });
             })
+            // Filter lokasi harus tetap diterapkan di server agar search, pagination,
+            // dan lifecycle filter tidak keluar dari scope lokasi yang dipilih.
             ->when($locationId > 0, fn ($query) => $query->where('location_id', $locationId))
-            ->when($status !== '', fn ($query) => $query->where('is_active', $status === 'active'))
+            ->when($status !== '', fn ($query) => $query->where('lifecycle_status', $status))
             ->orderBy('machine_code')
             ->paginate(10)
             ->withQueryString();
@@ -104,24 +108,58 @@ class MasterMesinController extends Controller
             ->with('flash_success', 'Mesin berhasil diperbarui.');
     }
 
-    public function deactivate(Request $request, int $machineId): RedirectResponse
+    public function deactivate(MachineLifecycleReasonRequest $request, int $machineId): RedirectResponse
     {
         $machine = $this->findMachine($machineId);
-        $this->machineService->deactivate($request, $machine);
+
+        try {
+            $this->machineService->deactivate($request, $machine, $request->string('reason')->toString());
+        } catch (InvalidMachineTransitionException $exception) {
+            // Penolakan domain lifecycle menjadi error bisnis terkendali, bukan HTTP 500.
+            return redirect()
+                ->route('master-mesin.index')
+                ->with('flash_error', $exception->getMessage());
+        }
 
         return redirect()
             ->route('master-mesin.index')
             ->with('flash_success', 'Mesin berhasil dinonaktifkan.');
     }
 
-    public function activate(Request $request, int $machineId): RedirectResponse
+    public function activate(MachineLifecycleReasonRequest $request, int $machineId): RedirectResponse
     {
         $machine = $this->findMachine($machineId);
-        $this->machineService->activate($request, $machine);
+
+        try {
+            $this->machineService->activate($request, $machine, $request->string('reason')->toString());
+        } catch (InvalidMachineTransitionException $exception) {
+            // Penolakan domain lifecycle menjadi error bisnis terkendali, bukan HTTP 500.
+            return redirect()
+                ->route('master-mesin.index')
+                ->with('flash_error', $exception->getMessage());
+        }
 
         return redirect()
             ->route('master-mesin.index')
             ->with('flash_success', 'Mesin berhasil diaktifkan kembali.');
+    }
+
+    public function retire(MachineLifecycleReasonRequest $request, int $machineId): RedirectResponse
+    {
+        $machine = $this->findMachine($machineId);
+
+        try {
+            $this->machineService->retire($request, $machine, $request->string('reason')->toString());
+        } catch (InvalidMachineTransitionException $exception) {
+            // Penolakan domain lifecycle menjadi error bisnis terkendali, bukan HTTP 500.
+            return redirect()
+                ->route('master-mesin.index')
+                ->with('flash_error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('master-mesin.index')
+            ->with('flash_success', 'Mesin berhasil dipensiunkan.');
     }
 
     public function destroy(Request $request, int $machineId): RedirectResponse
@@ -129,7 +167,7 @@ class MasterMesinController extends Controller
         $machine = $this->findMachine($machineId);
 
         // TASK-003 Slice 3: Cek proteksi histori sebelum menghapus
-        if (!$this->machineService->delete($request, $machine)) {
+        if (! $this->machineService->delete($request, $machine)) {
             return redirect()
                 ->route('master-mesin.index')
                 ->with('flash_error', 'Mesin yang sudah memiliki transaksi atau riwayat maintenance tidak dapat dihapus.');

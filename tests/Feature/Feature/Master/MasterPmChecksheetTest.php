@@ -343,6 +343,10 @@ class MasterPmChecksheetTest extends TestCase
      */
     public function test_update_locks_selected_machines_before_child_mutation(): void
     {
+        // Kunci tanggal bisnis agar fixture operational_from 2026-09-15 tetap
+        // berada di masa depan; test tidak boleh bergantung pada tanggal berjalan.
+        Carbon::setTestNow(Carbon::parse('2026-09-14 00:00:00', 'Asia/Jakarta'));
+
         $checksheet = PmChecksheet::query()->create([
             'checksheet_code' => 'PM-LOCK-ORDER',
             'checksheet_name' => 'Lock Order Checksheet',

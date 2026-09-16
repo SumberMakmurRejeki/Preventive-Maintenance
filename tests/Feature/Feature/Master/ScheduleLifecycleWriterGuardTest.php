@@ -16,7 +16,6 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 /**
@@ -166,10 +165,15 @@ class ScheduleLifecycleWriterGuardTest extends TestCase
 
     /**
      * Apply update jadwal tidak boleh menghidupkan kembali jadwal ENDED.
+     *
+     * TASK-006 Slice C: assignment hanya-ENDED dilaporkan sebagai dormant pada
+     * hasil apply (bukan kegagalan seluruh update), era ENDED tetap utuh, dan
+     * era baru tidak dibuat secara implisit.
      */
     public function test_schedule_update_apply_cannot_revive_ended_schedule(): void
     {
         $this->endScheduleViaAuthority();
+        $assignment = $this->schedule->pm_checksheet_machine_id;
         $payload = $this->wizardPayload($this->schedulePayload());
 
         // Preview baru setelah ENDED supaya token cocok dan apply mencapai writer.
@@ -178,17 +182,27 @@ class ScheduleLifecycleWriterGuardTest extends TestCase
             ['wizard_payload' => json_encode($payload, JSON_THROW_ON_ERROR)],
         );
         $preview->assertOk();
+        $this->assertSame('dormant_skipped', $preview->json('dormant_assignments.0.status'));
 
-        $this->actingAs($this->admin)->postJson(
+        $apply = $this->actingAs($this->admin)->postJson(
             "/pm/master-checksheet/{$this->checksheet->id}/apply-schedule-update",
             [
                 'wizard_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
                 'token' => $preview->json('token'),
                 'confirmed' => true,
             ],
-        )->assertStatus(422);
+        );
+        $apply->assertOk();
+        $apply->assertJsonPath('status', 'applied');
+        $apply->assertJsonPath('dormant_assignments.0.status', 'dormant_skipped');
+        $apply->assertJsonPath('dormant_assignments.0.assignment_id', $assignment);
 
         $this->assertScheduleStillEnded();
+        $this->assertSame(
+            1,
+            PmSchedule::query()->where('pm_checksheet_machine_id', $assignment)->count(),
+            'Era baru tidak boleh dibuat secara implisit untuk assignment dormant.',
+        );
     }
 
     /**
@@ -268,16 +282,71 @@ class ScheduleLifecycleWriterGuardTest extends TestCase
         ];
 
         $this->actingAs($this->admin);
+        // Request langsung harus membawa session seperti request HTTP produksi,
+        // karena hasil dormant dilaporkan melalui flash ke boundary admin.
+        $request = Request::create('/pm/master-checksheet', 'POST');
+        $request->setLaravelSession(app('session.store'));
 
-        $this->assertThrows(
-            fn () => app(PmChecksheetService::class)->update(
-                Request::create('/pm/master-checksheet', 'POST'),
-                $this->checksheet,
-                $payload,
-            ),
-            ValidationException::class,
-        );
+        app(PmChecksheetService::class)->update($request, $this->checksheet, $payload);
 
         $this->assertScheduleStillEnded();
+        $this->assertSame(
+            1,
+            PmSchedule::query()
+                ->where('pm_checksheet_machine_id', $this->schedule->pm_checksheet_machine_id)
+                ->count(),
+            'Era baru tidak boleh dibuat secara implisit untuk assignment dormant.',
+        );
+
+        // Hasil dormant harus sampai ke admin, bukan hanya ke log internal.
+        $dormant = $request->session()->get('dormant_assignments');
+        $this->assertIsArray($dormant);
+        $this->assertSame($this->schedule->pm_checksheet_machine_id, $dormant[0]['assignment_id'] ?? null);
+        $this->assertSame('dormant_skipped', $dormant[0]['status'] ?? null);
+        $this->assertNotEmpty($dormant[0]['instruction'] ?? null);
+    }
+
+    /**
+     * TASK-006 Slice C (Correction 2): histori ENDED yang sudah soft-deleted
+     * tetap terminal. Simpan wizard pada assignment hanya-ENDED-soft-deleted
+     * harus tetap melaporkan dormant, tidak menghidupkan histori, dan tidak
+     * membuat era baru secara implisit.
+     */
+    public function test_checksheet_wizard_save_keeps_soft_deleted_ended_history_dormant(): void
+    {
+        $this->endScheduleViaAuthority();
+        $assignmentId = $this->schedule->pm_checksheet_machine_id;
+
+        // Soft-delete era ENDED: default-scope query tidak menemuinya lagi.
+        $this->schedule->delete();
+        $this->assertTrue($this->schedule->fresh()->trashed());
+
+        $payload = [
+            'checksheet_code' => 'PM-GD-001',
+            'checksheet_name' => 'Guard Checksheet',
+            'description' => null,
+            'is_active' => true,
+            ...$this->wizardPayload($this->schedulePayload()),
+        ];
+
+        $request = Request::create('/pm/master-checksheet', 'POST');
+        $request->setLaravelSession(app('session.store'));
+
+        app(PmChecksheetService::class)->update($request, $this->checksheet, $payload);
+
+        // Histori soft-deleted tetap satu-satunya era dan tetap terminal.
+        $this->assertSame(
+            1,
+            PmSchedule::query()->withTrashed()->where('pm_checksheet_machine_id', $assignmentId)->count(),
+            'Era baru tidak boleh dibuat hanya karena histori soft-deleted tak terlihat default-scope.',
+        );
+        $this->assertSame('ended', PmSchedule::query()->withTrashed()->where('id', $this->schedule->id)->value('lifecycle_status'));
+        $this->assertFalse((bool) PmSchedule::query()->withTrashed()->where('id', $this->schedule->id)->value('is_active'));
+
+        // Hasil dormant tetap dilaporkan ke boundary admin, bukan hilang diam-diam.
+        $dormant = $request->session()->get('dormant_assignments');
+        $this->assertIsArray($dormant);
+        $this->assertSame($assignmentId, $dormant[0]['assignment_id'] ?? null);
+        $this->assertSame('dormant_skipped', $dormant[0]['status'] ?? null);
     }
 }

@@ -25,6 +25,28 @@
             <x-ui.alert variant="error" title="Informasi">{{ session('flash_error') }}</x-ui.alert>
         @endif
 
+        {{-- TASK-006 Slice C: assignment dormant harus terlihat oleh admin,
+             bukan hanya hasil internal service atau log. --}}
+        @php $dormantAssignments = (array) session('dormant_assignments', []); @endphp
+        @if ($dormantAssignments !== [])
+            <x-ui.alert variant="warning" title="Sebagian assignment tidak diubah (dormant)">
+                <ul class="list-disc space-y-1 pl-5">
+                    @foreach ($dormantAssignments as $dormant)
+                        @php
+                            $dormantMachine = $checksheet->machineAssignments
+                                ->firstWhere('id', (int) ($dormant['assignment_id'] ?? 0))
+                                ?->machine;
+                        @endphp
+                        <li>
+                            {{ $dormantMachine?->machine_code ?? ('Assignment #'.($dormant['assignment_id'] ?? '-')) }}{{ $dormantMachine?->machine_name ? ' — '.$dormantMachine->machine_name : '' }}:
+                            {{ $dormant['reason'] ?? 'Era Schedule berstatus ended.' }}
+                            {{ $dormant['instruction'] ?? 'Gunakan recommission eksplisit.' }}
+                        </li>
+                    @endforeach
+                </ul>
+            </x-ui.alert>
+        @endif
+
         <x-ui.card class="space-y-5">
             <h3 class="text-xl font-semibold">Informasi Mesin & Standard</h3>
             @foreach ($checksheet->machineAssignments as $assignment)

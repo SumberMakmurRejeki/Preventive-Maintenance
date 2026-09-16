@@ -165,6 +165,23 @@ class PmExecutorTest extends TestCase
         ]);
     }
 
+    /**
+     * TASK-006 Slice C: satu assignment hanya boleh memiliki satu era schedule
+     * current (active/paused). Test yang membuat era schedule baru harus
+     * mengakhiri era fixture lebih dahulu agar invariant database tetap utuh.
+     */
+    protected function endFixtureScheduleEra(): void
+    {
+        // Proyeksi kompatibilitas is_active ditulis pada operasi persist yang
+        // sama dengan lifecycle_status, mengikuti kontrak ScheduleLifecycleService.
+        PmSchedule::query()
+            ->whereKey($this->scheduleDate->pm_schedule_id)
+            ->update([
+                'lifecycle_status' => 'ended',
+                'is_active' => false,
+            ]);
+    }
+
     public function test_operator_can_open_pm_executor_page(): void
     {
         $response = $this->actingAs($this->operator)->get("/pm/executor/{$this->machine->machine_code}");
@@ -442,6 +459,9 @@ class PmExecutorTest extends TestCase
     {
         Carbon::setTestNow(Carbon::parse('2026-09-10 00:00:00', 'Asia/Jakarta'));
 
+        // Era fixture diakhiri agar era baru di bawah menjadi satu-satunya era current.
+        $this->endFixtureScheduleEra();
+
         $schedule = PmSchedule::query()->create([
             'pm_checksheet_machine_id' => PmChecksheetMachine::query()->firstOrFail()->id,
             'frequency_type' => 'daily',
@@ -507,6 +527,9 @@ class PmExecutorTest extends TestCase
     {
         Carbon::setTestNow(Carbon::parse('2026-09-10 00:00:00', 'Asia/Jakarta'));
 
+        // Era fixture diakhiri agar era legacy di bawah menjadi satu-satunya era current.
+        $this->endFixtureScheduleEra();
+
         $legacySchedule = PmSchedule::query()->create([
             'pm_checksheet_machine_id' => PmChecksheetMachine::query()->firstOrFail()->id,
             'frequency_type' => 'daily',
@@ -563,6 +586,9 @@ class PmExecutorTest extends TestCase
     public function test_submit_respects_explicit_later_start_date_boundary(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-09-10 00:00:00', 'Asia/Jakarta'));
+
+        // Era fixture diakhiri agar era baru di bawah menjadi satu-satunya era current.
+        $this->endFixtureScheduleEra();
 
         $schedule = PmSchedule::query()->create([
             'pm_checksheet_machine_id' => PmChecksheetMachine::query()->firstOrFail()->id,

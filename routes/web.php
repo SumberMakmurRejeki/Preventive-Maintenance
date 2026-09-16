@@ -109,6 +109,8 @@ Route::middleware(['prime.auth', 'prime.operator.session'])->group(function (): 
         Route::put('/{machineId}', [MasterMesinController::class, 'update'])->name('master-mesin.update');
         Route::patch('/{machineId}/nonaktifkan', [MasterMesinController::class, 'deactivate'])->name('master-mesin.deactivate');
         Route::patch('/{machineId}/aktifkan', [MasterMesinController::class, 'activate'])->name('master-mesin.activate');
+        // Retirement memakai endpoint khusus agar tidak tercampur dengan deactivate biasa.
+        Route::patch('/{machineId}/pensiunkan', [MasterMesinController::class, 'retire'])->name('master-mesin.retire');
         Route::delete('/{machineId}', [MasterMesinController::class, 'destroy'])->name('master-mesin.destroy');
         Route::post('/{machineId}/generate-qr', [MasterMesinController::class, 'generateQr'])->name('master-mesin.generate-qr');
     });

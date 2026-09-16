@@ -7,6 +7,7 @@ use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Services\Auth\ActivityLogService;
 use App\Services\PM\LifecyclePolicy;
+use App\Services\PM\MachineLifecycleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,7 @@ class MachineService
         protected ActivityLogService $activityLog,
         protected QrCodeService $qrCodeService,
         protected LifecyclePolicy $lifecyclePolicy,
+        protected MachineLifecycleService $machineLifecycleService,
     ) {}
 
     /**
@@ -27,7 +29,7 @@ class MachineService
     {
         return DB::transaction(function () use ($request, $payload): Machine {
             $machine = Machine::query()->create([
-                ...$this->normalizePayload($payload),
+                ...$this->normalizeCreatePayload($payload),
                 'qr_token' => $this->qrCodeService->createUniqueToken(),
             ]);
 
@@ -56,7 +58,7 @@ class MachineService
     {
         $oldValues = $machine->only(['location_id', 'machine_code', 'machine_name', 'qr_token', 'qr_code_path', 'description', 'is_active']);
 
-        $machine->fill($this->normalizePayload($payload));
+        $machine->fill($this->normalizeUpdatePayload($payload));
         $machine->save();
 
         $this->activityLog->log(
@@ -73,40 +75,28 @@ class MachineService
         return $machine;
     }
 
-    public function deactivate(Request $request, Machine $machine): void
+    /**
+     * Adapter kompatibilitas untuk endpoint nonaktif; otoritas ada di service lifecycle.
+     */
+    public function deactivate(Request $request, Machine $machine, string $reason): void
     {
-        $oldValues = $machine->only(['location_id', 'machine_code', 'machine_name', 'qr_token', 'qr_code_path', 'description', 'is_active']);
-
-        $machine->forceFill($this->lifecyclePolicy->machineProjection(false))->save();
-
-        $this->activityLog->log(
-            request: $request,
-            moduleName: 'master_mesin',
-            action: 'deactivate',
-            description: sprintf('Deactivate machine %s', $machine->machine_code),
-            tableName: 'machines',
-            recordId: $machine->id,
-            oldValues: $oldValues,
-            newValues: $machine->only(['location_id', 'machine_code', 'machine_name', 'qr_token', 'qr_code_path', 'description', 'is_active']),
-        );
+        $this->machineLifecycleService->transition($machine, 'inactive', $reason);
     }
 
-    public function activate(Request $request, Machine $machine): void
+    /**
+     * Adapter kompatibilitas untuk endpoint aktif; RETIRED ditolak oleh service lifecycle.
+     */
+    public function activate(Request $request, Machine $machine, string $reason): void
     {
-        $oldValues = $machine->only(['location_id', 'machine_code', 'machine_name', 'qr_token', 'qr_code_path', 'description', 'is_active']);
+        $this->machineLifecycleService->transition($machine, 'active', $reason);
+    }
 
-        $machine->forceFill($this->lifecyclePolicy->machineProjection(true))->save();
-
-        $this->activityLog->log(
-            request: $request,
-            moduleName: 'master_mesin',
-            action: 'activate',
-            description: sprintf('Activate machine %s', $machine->machine_code),
-            tableName: 'machines',
-            recordId: $machine->id,
-            oldValues: $oldValues,
-            newValues: $machine->only(['location_id', 'machine_code', 'machine_name', 'qr_token', 'qr_code_path', 'description', 'is_active']),
-        );
+    /**
+     * Mengakhiri lifecycle Machine tanpa menulis Schedule secara langsung.
+     */
+    public function retire(Request $request, Machine $machine, string $reason): void
+    {
+        $this->machineLifecycleService->transition($machine, 'retired', $reason);
     }
 
     public function regenerateQr(Request $request, Machine $machine): Machine
@@ -285,10 +275,12 @@ class MachineService
     }
 
     /**
+     * Membatasi creation pada proyeksi initial ACTIVE atau INACTIVE.
+     *
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    protected function normalizePayload(array $payload): array
+    protected function normalizeCreatePayload(array $payload): array
     {
         $normalized = Arr::only($payload, [
             'location_id',
@@ -298,13 +290,26 @@ class MachineService
             'is_active',
         ]);
 
-        // Sinkronkan status lifecycle saat payload membawa is_active,
-        // memakai proyeksi legacy agar mapping tidak terduplikasi.
-        if (array_key_exists('is_active', $normalized)) {
-            $normalized['lifecycle_status'] = $this->lifecyclePolicy
-                ->machineProjection((bool) $normalized['is_active'])['lifecycle_status'];
-        }
+        // Creation hanya memproyeksikan state awal non-terminal dari is_active.
+        $normalized['lifecycle_status'] = $this->lifecyclePolicy
+            ->machineProjection((bool) ($normalized['is_active'] ?? true))['lifecycle_status'];
 
         return $normalized;
+    }
+
+    /**
+     * Memisahkan update data master dari authority lifecycle secara defensif.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function normalizeUpdatePayload(array $payload): array
+    {
+        return Arr::only($payload, [
+            'location_id',
+            'machine_code',
+            'machine_name',
+            'description',
+        ]);
     }
 }

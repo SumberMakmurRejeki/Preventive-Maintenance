@@ -66,6 +66,14 @@ class PmSchedule extends Model
         $query->where('is_active', false);
     }
 
+    /**
+     * Membatasi query pada satu era operasional non-terminal yang masih berlaku.
+     */
+    public function scopeCurrentEra(Builder $query): void
+    {
+        $query->whereIn('lifecycle_status', ['active', 'paused']);
+    }
+
     public function scopeByDateRange(Builder $query, string $startDate, string $endDate): void
     {
         $query->whereDate('start_date', '>=', $startDate)

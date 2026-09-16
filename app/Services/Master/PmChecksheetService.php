@@ -320,10 +320,22 @@ class PmChecksheetService
                 })->all();
             }
 
-            if ($schedule === null) {
-                $assignmentSchedule = $assignment->schedules->first();
+            // Integritas era current diperiksa independen untuk SETIAP assignment,
+            // bukan hanya assignment pertama yang mengisi payload bersama. Sibling
+            // berikutnya yang invalid tidak boleh terlewat hanya karena payload
+            // Schedule sudah terisi oleh assignment sebelumnya.
+            $currentSchedules = $assignment->schedules
+                ->whereIn('lifecycle_status', ['active', 'paused'])
+                ->values();
+            if ($currentSchedules->count() > 1) {
+                throw new DomainException('Integrity current schedule era ganda terdeteksi.');
+            }
 
-                if ($assignmentSchedule) {
+            if ($schedule === null) {
+                // Payload wizard hanya boleh menampilkan konfigurasi current era.
+                $assignmentSchedule = $currentSchedules->first();
+
+                if ($assignmentSchedule !== null) {
                     $schedule = [
                         'frequency_type' => $assignmentSchedule->frequency_type,
                         'weekly_days' => $assignmentSchedule->weekly_days ?? [],
@@ -344,7 +356,7 @@ class PmChecksheetService
             // JS menerima Array alih-alih Object dan kehilangan assignment key dinamis.
             // Cast ke stdClass hanya saat kosong agar array berisi entry tetap dikodekan
             // sebagai object JSON dengan key string — array PHP berisi entry sudah aman.
-            'standards' => $standards === [] ? new \stdClass() : $standards,
+            'standards' => $standards === [] ? new \stdClass : $standards,
             'schedule' => $schedule,
         ];
     }
@@ -362,16 +374,18 @@ class PmChecksheetService
         // Normalisasi ID lalu kunci semua Machine sebelum mutation child/config.
         $selectedMachineIds = array_values(array_unique(array_map('intval', $payload['selected_machine_ids'])));
         sort($selectedMachineIds, SORT_NUMERIC);
-        Machine::query()
+        $lockedMachines = Machine::query()
             ->whereIn('id', $selectedMachineIds)
             ->orderBy('id', 'asc')
             ->lockForUpdate()
-            ->get();
+            ->get()
+            ->keyBy('id');
 
         $parts = $payload['parts'];
         $standards = $payload['standards'];
         $schedule = $payload['schedule'];
 
+        $dormantAssignments = [];
         foreach ($selectedMachineIds as $machineId) {
             $assignment = PmChecksheetMachine::query()->updateOrCreate(
                 [
@@ -431,16 +445,43 @@ class PmChecksheetService
                 }
             }
 
-            $existingSchedule = PmSchedule::query()
+            // Era current selalu dipilih dari state non-terminal; first() lintas
+            // histori dilarang karena ENDED tidak pernah boleh menjadi konfigurasi live.
+            $currentSchedules = PmSchedule::query()
                 ->where('pm_checksheet_machine_id', $assignment->id)
-                ->first();
-
-            // Lifecycle authority owns pause/resume/end. Existing PAUSED
-            // schedules remain paused while configuration may still be edited;
-            // only ENDED remains a fail-closed rejection for this legacy writer.
-            if ($existingSchedule !== null && $existingSchedule->lifecycle_status === 'ended') {
+                ->currentEra()
+                ->orderBy('id')
+                ->get();
+            if ($currentSchedules->count() > 1) {
                 throw ValidationException::withMessages([
-                    'schedule' => 'Jadwal PM ini sudah berstatus ended sehingga tidak dapat diaktifkan kembali; era jadwal lama bersifat terminal.',
+                    'schedule' => 'Integrity current schedule era ganda terdeteksi.',
+                ]);
+            }
+            $existingSchedule = $currentSchedules->first();
+
+            // Histori ENDED tetap menjadi bukti dormant meskipun row soft-deleted;
+            // query eksplisit withTrashed() mencegah save biasa membuat era baru.
+            $hasEndedHistory = PmSchedule::query()
+                ->withTrashed()
+                ->where('pm_checksheet_machine_id', $assignment->id)
+                ->where('lifecycle_status', 'ended')
+                ->exists();
+            if ($existingSchedule === null && $hasEndedHistory) {
+                // Assignment dormant tidak gagal seluruh save; hasilnya di-flash
+                // terstruktur agar admin tahu recommission explicit diperlukan.
+                $dormantAssignments[] = [
+                    'assignment_id' => $assignment->id,
+                    'status' => 'dormant_skipped',
+                    'reason' => 'Schedule era sebelumnya sudah berstatus ended.',
+                    'instruction' => 'Gunakan recommission explicit untuk membuat era operasional baru.',
+                ];
+
+                continue;
+            }
+
+            if ($existingSchedule === null && $lockedMachines->get($machineId)?->lifecycle_status !== 'active') {
+                throw ValidationException::withMessages([
+                    'schedule' => 'Era schedule baru hanya dapat dibuat untuk Machine aktif.',
                 ]);
             }
 
@@ -455,8 +496,6 @@ class PmChecksheetService
                 'created_by' => $request->user()?->id,
             ];
 
-            // Schedule baru tetap ACTIVE sesuai behavior existing. Schedule
-            // PAUSED tidak menerima projection(true), sehingga tidak revive.
             if ($existingSchedule === null || $existingSchedule->lifecycle_status === 'active') {
                 $scheduleAttributes = [
                     ...$scheduleAttributes,
@@ -464,14 +503,21 @@ class PmChecksheetService
                 ];
             }
 
-            $scheduleModel = PmSchedule::query()->updateOrCreate(
-                ['pm_checksheet_machine_id' => $assignment->id],
-                $scheduleAttributes,
-            );
+            // Hanya current era yang di-update; era ENDED tidak pernah menjadi target upsert.
+            $scheduleModel = $existingSchedule ?? PmSchedule::query()->create([
+                'pm_checksheet_machine_id' => $assignment->id,
+                ...$scheduleAttributes,
+            ]);
+            if ($existingSchedule !== null) {
+                $scheduleModel->fill($scheduleAttributes)->save();
+            }
 
             if ($existingSchedule === null || $existingSchedule->lifecycle_status === 'active') {
                 $this->scheduleDateReconciler->reconcile($scheduleModel);
             }
+        }
+        if ($dormantAssignments !== []) {
+            $request->session()->flash('dormant_assignments', $dormantAssignments);
         }
     }
 

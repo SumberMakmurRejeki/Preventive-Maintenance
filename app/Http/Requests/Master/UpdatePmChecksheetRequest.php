@@ -59,13 +59,17 @@ class UpdatePmChecksheetRequest extends StorePmChecksheetRequest
 
                 $businessToday = BusinessDate::today();
 
-                // Nilai operational_from tersimpan: jadwal aktif pertama checksheet.
+                // TASK-006 Slice C: pembanding harus era current; ketika tidak ada
+                // era current (assignment dormant), jendela live terakhir (era ENDED
+                // terbaru) tetap dipakai sebagai pembanding "unchanged" agar payload
+                // identik tidak ditolak karena alasan era ganda.
                 $storedSchedule = PmSchedule::query()
                     ->whereHas(
                         'checksheetMachine',
                         fn (Builder $query) => $query->where('pm_checksheet_id', $this->route('id'))
                     )
-                    ->orderBy('id')
+                    ->orderByRaw("CASE WHEN lifecycle_status IN ('active','paused') THEN 0 ELSE 1 END")
+                    ->orderByDesc('id')
                     ->first();
                 $storedFrom = $storedSchedule?->operational_from;
 

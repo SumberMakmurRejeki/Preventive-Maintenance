@@ -12,11 +12,13 @@ use App\Models\PmScheduleDate;
 use App\Models\User;
 use App\Services\Master\PmScheduleUpdateService;
 use App\Services\PM\BusinessDate;
+use App\Services\PM\PmScheduleDateReconciler;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Mockery;
 use Tests\TestCase;
 
 /**
@@ -235,6 +237,9 @@ class PmChecksheetScheduleUpdatePreviewApplyTest extends TestCase
             ->assertJsonPath('status', 'unresolved')
             ->assertJsonPath('unresolved', true);
         $this->assertSame($before, PmScheduleDate::query()->count());
+        // Jalur unresolved tetap memakai kontrak bentuk response yang sama;
+        // business_today mengikuti test-now yang dipasang di setUp.
+        $this->assertSame('2026-06-15', $response->json('business_today'));
     }
 
     public function test_preview_does_not_write_to_database(): void
@@ -1236,5 +1241,503 @@ class PmChecksheetScheduleUpdatePreviewApplyTest extends TestCase
             'is_active' => true,
             'frequency_type' => 'weekly',
         ]);
+    }
+
+    // =========================================================================
+    // SLICE C: Semantik current era (dormant, fingerprint, sibling isolation)
+    // =========================================================================
+
+    /**
+     * Assignment dengan hanya era ENDED dilaporkan dormant secara terstruktur
+     * pada preview dan apply, tanpa membuat era baru dan tanpa memutasi histori.
+     */
+    public function test_ended_only_assignment_is_reported_dormant_at_preview_and_apply(): void
+    {
+        $checksheet = $this->seedChecksheetWithSchedule([
+            'lifecycle_status' => 'ended',
+            'is_active' => false,
+        ]);
+        $assignment = $checksheet->machineAssignments()->first();
+        $endedSchedule = PmSchedule::query()->first();
+
+        // Occurrence historis pada era ENDED harus tetap utuh setelah apply.
+        $historicDate = PmScheduleDate::create([
+            'pm_schedule_id' => $endedSchedule->id,
+            'machine_id' => $this->machine->id,
+            'scheduled_date' => '2026-06-16',
+            'status' => 'approved',
+        ]);
+
+        $payload = $this->wizardPayload([
+            'frequency_type' => 'weekly',
+            'weekly_days' => [2, 5],
+            'monthly_day' => null,
+            'operational_from' => '2026-06-15',
+            'start_date' => '2026-06-15',
+            'generate_until' => '2026-09-15',
+        ]);
+
+        $preview = $this->postPreview($checksheet->id, $payload);
+        $preview->assertOk();
+
+        // Era ENDED tidak boleh diklasifikasi sebagai impact current.
+        $this->assertNotContains('2026-06-16', $preview->json('impact.removed'));
+        $this->assertNotContains('2026-06-16', $preview->json('impact.protected'));
+        $this->assertNotContains('2026-06-16', $preview->json('impact.retained'));
+
+        // Dormant harus terlihat sebagai hasil terstruktur pada boundary preview.
+        $this->assertSame(
+            [
+                [
+                    'assignment_id' => $assignment->id,
+                    'status' => 'dormant_skipped',
+                    'reason' => 'Assignment hanya memiliki era Schedule berstatus ended.',
+                    'instruction' => 'Era operasional baru hanya dapat dibuat melalui recommission yang eksplisit.',
+                ],
+            ],
+            $preview->json('dormant_assignments'),
+        );
+
+        $apply = $this->postApply($checksheet->id, $payload, $preview->json('token'));
+        $apply->assertOk();
+        $apply->assertJsonPath('status', 'applied');
+
+        // Tidak ada era baru yang dibuat secara implisit untuk assignment dormant.
+        $this->assertSame(
+            1,
+            PmSchedule::query()->where('pm_checksheet_machine_id', $assignment->id)->count(),
+        );
+        $this->assertSame('ended', $endedSchedule->fresh()->lifecycle_status);
+        $this->assertSame('approved', $historicDate->fresh()->status);
+        $this->assertNull($historicDate->fresh()->deleted_at);
+
+        // Dormant juga terlihat sebagai hasil terstruktur pada boundary apply.
+        $this->assertSame('dormant_skipped', $apply->json('dormant_assignments.0.status'));
+        $this->assertSame($assignment->id, $apply->json('dormant_assignments.0.assignment_id'));
+    }
+
+    /**
+     * Assignment dormant tidak boleh memblokir update sibling pada checksheet yang sama.
+     */
+    public function test_dormant_assignment_does_not_block_sibling_assignment_update(): void
+    {
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-SIBLING',
+            'checksheet_name' => 'Sibling Isolation Checksheet',
+            'is_active' => true,
+        ]);
+
+        // Assignment A: era current ACTIVE yang sah untuk dimutasi.
+        $assignmentA = PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $this->machine->id,
+        ]);
+        $scheduleA = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => $assignmentA->id,
+            'frequency_type' => 'weekly',
+            'weekly_days' => [1, 4],
+            'operational_from' => '2026-06-01',
+            'start_date' => '2026-06-01',
+            'generate_until' => '2026-09-01',
+            'is_active' => true,
+            'lifecycle_status' => 'active',
+            'effective_live_from' => '2026-06-01',
+        ]);
+
+        // Assignment B: hanya era ENDED (dormant) dengan histori terlindungi.
+        $machineB = Machine::query()->create([
+            'location_id' => $this->machine->location_id,
+            'machine_code' => 'MC-SIB',
+            'machine_name' => 'Sibling Dormant Machine',
+            'qr_token' => 'qr-mc-sib',
+            'is_active' => true,
+            'lifecycle_status' => 'retired',
+        ]);
+        $assignmentB = PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $machineB->id,
+        ]);
+        $scheduleB = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => $assignmentB->id,
+            'frequency_type' => 'daily',
+            'operational_from' => '2026-05-01',
+            'start_date' => '2026-05-01',
+            'generate_until' => '2026-06-01',
+            'is_active' => false,
+            'lifecycle_status' => 'ended',
+        ]);
+        $historicDateB = PmScheduleDate::create([
+            'pm_schedule_id' => $scheduleB->id,
+            'machine_id' => $machineB->id,
+            'scheduled_date' => '2026-05-04',
+            'status' => 'approved',
+        ]);
+
+        $payload = $this->wizardPayload([
+            'frequency_type' => 'weekly',
+            'weekly_days' => [2, 5],
+            'monthly_day' => null,
+            'operational_from' => '2026-06-15',
+            'start_date' => '2026-06-15',
+            'generate_until' => '2026-09-15',
+        ]);
+
+        $preview = $this->postPreview($checksheet->id, $payload);
+        $preview->assertOk();
+
+        // Dormant hanya milik assignment B; A tetap diklasifikasi normal.
+        $this->assertSame($assignmentB->id, $preview->json('dormant_assignments.0.assignment_id'));
+        $this->assertSame('dormant_skipped', $preview->json('dormant_assignments.0.status'));
+        $this->assertCount(1, $preview->json('dormant_assignments'));
+        $this->assertNotContains('2026-05-04', $preview->json('impact.removed'));
+
+        $apply = $this->postApply($checksheet->id, $payload, $preview->json('token'));
+        $apply->assertOk();
+        $apply->assertJsonPath('status', 'applied');
+
+        // Assignment A berubah sesuai payload; era B dan histori B tetap utuh.
+        $this->assertSame('weekly', $scheduleA->fresh()->frequency_type);
+        $this->assertSame([2, 5], $scheduleA->fresh()->weekly_days);
+        $this->assertSame('ended', $scheduleB->fresh()->lifecycle_status);
+        $this->assertSame('daily', $scheduleB->fresh()->frequency_type);
+        $this->assertSame('approved', $historicDateB->fresh()->status);
+        $this->assertNull($historicDateB->fresh()->deleted_at);
+        $this->assertSame(
+            1,
+            PmSchedule::query()->where('pm_checksheet_machine_id', $assignmentB->id)->count(),
+            'Assignment dormant tidak boleh mendapat era baru secara implisit.',
+        );
+        $this->assertGreaterThan(
+            0,
+            PmScheduleDate::query()->where('pm_schedule_id', $scheduleA->id)->count(),
+            'Assignment sibling aktif harus tetap direkonsiliasi.',
+        );
+    }
+
+    /**
+     * Fingerprint harus mengabaikan baris era terminal dan tetap sensitif
+     * terhadap perubahan pada era current.
+     */
+    public function test_fingerprint_ignores_terminal_era_rows_but_detects_current_era_change(): void
+    {
+        $checksheet = $this->seedChecksheetWithSchedule([
+            'lifecycle_status' => 'active',
+            'effective_live_from' => '2026-06-01',
+        ]);
+        $assignment = $checksheet->machineAssignments()->first();
+
+        // Era terminal pada assignment yang sama.
+        $endedSchedule = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => $assignment->id,
+            'frequency_type' => 'daily',
+            'operational_from' => '2026-01-01',
+            'start_date' => '2026-01-01',
+            'generate_until' => '2026-02-01',
+            'is_active' => false,
+            'lifecycle_status' => 'ended',
+        ]);
+
+        $service = app(PmScheduleUpdateService::class);
+        $businessToday = BusinessDate::today();
+        $tokenA = $service->fingerprint($checksheet, $businessToday);
+
+        // Penambahan occurrence pada era terminal tidak boleh mengubah token.
+        PmScheduleDate::create([
+            'pm_schedule_id' => $endedSchedule->id,
+            'machine_id' => $this->machine->id,
+            'scheduled_date' => '2026-01-02',
+            'status' => 'approved',
+        ]);
+        $tokenB = $service->fingerprint($checksheet, $businessToday);
+        $this->assertSame($tokenA, $tokenB, 'Fingerprint tidak boleh bergantung pada era terminal.');
+
+        // Perubahan pada era current tetap harus terdeteksi.
+        $current = PmSchedule::query()->currentEra()->sole();
+        PmScheduleDate::create([
+            'pm_schedule_id' => $current->id,
+            'machine_id' => $this->machine->id,
+            'scheduled_date' => '2026-06-16',
+            'status' => 'scheduled',
+        ]);
+        $tokenC = $service->fingerprint($checksheet, $businessToday);
+        $this->assertNotSame($tokenB, $tokenC, 'Fingerprint harus tetap mendeteksi perubahan era current.');
+    }
+
+    /**
+     * Era current PAUSED tidak boleh diresume atau dimaterialisasi secara
+     * implisit oleh apply; hanya transition lifecycle eksplisit yang boleh
+     * mengubahnya.
+     */
+    public function test_paused_current_era_remains_paused_and_unmaterialized(): void
+    {
+        $checksheet = $this->seedChecksheetWithSchedule([
+            'lifecycle_status' => 'paused',
+            'is_active' => false,
+            'effective_live_from' => '2026-06-01',
+        ]);
+        $assignment = $checksheet->machineAssignments()->first();
+        $schedule = PmSchedule::query()->first();
+
+        $payload = $this->wizardPayload([
+            'frequency_type' => 'weekly',
+            'weekly_days' => [2, 5],
+            'monthly_day' => null,
+            'operational_from' => '2026-06-15',
+            'start_date' => '2026-06-15',
+            'generate_until' => '2026-09-15',
+        ]);
+
+        $preview = $this->postPreview($checksheet->id, $payload);
+        $preview->assertOk();
+
+        // Era paused tidak boleh muncul sebagai impact yang akan dimutasi.
+        $this->assertSame([], $preview->json('impact.created'));
+        $this->assertSame([], $preview->json('impact.removed'));
+
+        $apply = $this->postApply($checksheet->id, $payload, $preview->json('token'));
+        $apply->assertOk();
+        $apply->assertJsonPath('status', 'applied');
+
+        $fresh = $schedule->fresh();
+        $this->assertSame('paused', $fresh->lifecycle_status);
+        $this->assertFalse((bool) $fresh->is_active);
+        $this->assertSame('2026-06-01', $fresh->effective_live_from?->toDateString());
+        // Konfigurasi boleh diperbarui, tetapi tanpa materialisasi occurrence.
+        $this->assertSame([2, 5], $fresh->weekly_days);
+        $this->assertSame(0, PmScheduleDate::query()->where('pm_schedule_id', $schedule->id)->count());
+        $this->assertSame(1, PmSchedule::query()->where('pm_checksheet_machine_id', $assignment->id)->count());
+    }
+
+    /**
+     * TASK-006 Slice C: hasil dormant harus terlihat di halaman admin, bukan
+     * hanya pada response JSON internal. Flash yang diset writer dirender
+     * menjadi peringatan yang menyebut kode/nama mesin beserta instruksinya.
+     */
+    public function test_dormant_assignment_result_is_visible_on_admin_checksheet_page(): void
+    {
+        $checksheet = $this->seedChecksheetWithSchedule();
+        $assignment = $checksheet->machineAssignments()->first();
+
+        $response = $this->actingAs($this->admin)
+            ->withSession([
+                'dormant_assignments' => [
+                    [
+                        'assignment_id' => $assignment->id,
+                        'status' => 'dormant_skipped',
+                        'reason' => 'Era schedule terakhir berstatus ended.',
+                        'instruction' => 'Gunakan recommission eksplisit untuk memulai era baru.',
+                    ],
+                ],
+            ])
+            ->get(route('master-checksheet.show', $checksheet->id));
+
+        $response->assertOk();
+        $response->assertSee('dormant', false);
+        $response->assertSee($this->machine->machine_code, false);
+        $response->assertSee($this->machine->machine_name, false);
+        $response->assertSee('Era schedule terakhir berstatus ended.', false);
+        $response->assertSee('Gunakan recommission eksplisit untuk memulai era baru.', false);
+    }
+
+    /**
+     * Halaman admin tanpa hasil dormant tidak boleh memunculkan peringatan.
+     */
+    public function test_admin_checksheet_page_has_no_dormant_warning_without_result(): void
+    {
+        $checksheet = $this->seedChecksheetWithSchedule();
+
+        $response = $this->actingAs($this->admin)
+            ->get(route('master-checksheet.show', $checksheet->id));
+
+        $response->assertOk();
+        $response->assertDontSee('tidak diubah (dormant)', false);
+    }
+
+    /**
+     * TASK-006 Slice C (Correction 2): histori ENDED yang sudah SOFT-DELETED
+     * tetap merupakan histori terminal. Assignment hanya-ENDED-soft-deleted
+     * tanpa era current harus tetap dilaporkan dormant: preview tidak boleh
+     * membuat era aktif implisit, dan apply tidak boleh membuat era baru
+     * hanya karena default-scope query tidak melihat baris yang soft-deleted.
+     */
+    public function test_soft_deleted_ended_only_assignment_is_reported_dormant_without_implicit_era(): void
+    {
+        $checksheet = $this->seedChecksheetWithSchedule([
+            'lifecycle_status' => 'ended',
+            'is_active' => false,
+        ]);
+        $assignment = $checksheet->machineAssignments()->first();
+        $endedSchedule = PmSchedule::query()->withTrashed()->where('pm_checksheet_machine_id', $assignment->id)->firstOrFail();
+
+        // Histori ENDED di-soft-delete: default-scope query tidak menemuinya.
+        $endedSchedule->delete();
+
+        $payload = $this->wizardPayload([
+            'frequency_type' => 'weekly',
+            'weekly_days' => [2, 5],
+            'monthly_day' => null,
+            'operational_from' => '2026-06-15',
+            'start_date' => '2026-06-15',
+            'generate_until' => '2026-09-15',
+        ]);
+        $preview = $this->postPreview($checksheet->id, $payload);
+        $preview->assertOk();
+        $this->assertSame(
+            [
+                [
+                    'assignment_id' => $assignment->id,
+                    'status' => 'dormant_skipped',
+                    'reason' => 'Assignment hanya memiliki era Schedule berstatus ended.',
+                    'instruction' => 'Era operasional baru hanya dapat dibuat melalui recommission yang eksplisit.',
+                ],
+            ],
+            $preview->json('dormant_assignments'),
+        );
+
+        $apply = $this->postApply($checksheet->id, $payload, $preview->json('token'));
+        $apply->assertOk();
+        $apply->assertJsonPath('status', 'applied');
+
+        // Era soft-deleted tetap utuh dan tetap terminal; tidak dihidupkan,
+        // tidak di-restore, tidak dimutasi.
+        $this->assertSame(1, PmSchedule::query()->withTrashed()->where('pm_checksheet_machine_id', $assignment->id)->count());
+        $this->assertSame(1, PmSchedule::query()->withTrashed()->where('pm_checksheet_machine_id', $assignment->id)->onlyTrashed()->count());
+        $this->assertSame('ended', PmSchedule::query()->withTrashed()->where('id', $endedSchedule->id)->value('lifecycle_status'));
+        $this->assertFalse((bool) PmSchedule::query()->withTrashed()->where('id', $endedSchedule->id)->value('is_active'));
+        $this->assertSame('dormant_skipped', $apply->json('dormant_assignments.0.status'));
+    }
+
+    // =========================================================================
+    // SLICE C (Correction 3): dampak reconciliation tunggal pada apply
+    // =========================================================================
+
+    /**
+     * Apply harus melaporkan dampak reconciliation yang benar-benar terjadi.
+     *
+     * Sebelum koreksi, persistScheduleConfig() mereconcile schedule lebih dulu
+     * sehingga loop agregat apply() menjadi reconcile kedua: mutasi pertama
+     * terbuang dan counts.created dilaporkan 0 meski tanggal nyata tercipta.
+     */
+    public function test_apply_reports_actual_reconciliation_impact_once(): void
+    {
+        $checksheet = $this->seedChecksheetWithSchedule([
+            'frequency_type' => 'weekly',
+            'weekly_days' => [1, 4],
+            'operational_from' => '2026-06-01',
+            'start_date' => '2026-06-01',
+            'generate_until' => '2026-09-01',
+        ]);
+        $schedule = PmSchedule::query()->first();
+
+        // Apply awal: materialisasi tanggal untuk konfigurasi tersimpan.
+        $initialPayload = $this->wizardPayload([
+            'frequency_type' => 'weekly',
+            'weekly_days' => [1, 4],
+            'monthly_day' => null,
+            'operational_from' => '2026-06-01',
+            'start_date' => '2026-06-01',
+            'generate_until' => '2026-09-01',
+        ]);
+        $initial = $this->postApply(
+            $checksheet->id,
+            $initialPayload,
+            $this->postPreview($checksheet->id, $initialPayload)->json('token'),
+        );
+        $initial->assertOk();
+        $this->assertGreaterThan(0, PmScheduleDate::query()->where('pm_schedule_id', $schedule->id)->count());
+
+        // Perubahan nyata: hari minggu digeser, sebagian tanggal harus dibuat ulang.
+        $changedPayload = $this->wizardPayload([
+            'frequency_type' => 'weekly',
+            'weekly_days' => [2, 5],
+            'monthly_day' => null,
+            'operational_from' => '2026-06-01',
+            'start_date' => '2026-06-01',
+            'generate_until' => '2026-09-01',
+        ]);
+        $preview = $this->postPreview($checksheet->id, $changedPayload);
+        $preview->assertOk();
+        $expectedCreated = $preview->json('counts.created');
+        $expectedRemoved = $preview->json('counts.removed');
+        $this->assertGreaterThan(0, $expectedCreated, 'Preview harus melaporkan tanggal baru yang akan dibuat.');
+
+        $apply = $this->postApply($checksheet->id, $changedPayload, $preview->json('token'));
+        $apply->assertOk();
+        $apply->assertJsonPath('status', 'applied');
+        $this->assertSame(
+            $expectedCreated,
+            $apply->json('counts.created'),
+            'Apply harus melaporkan dampak nyata, bukan nol akibat reconcile ganda.',
+        );
+        $this->assertSame($expectedRemoved, $apply->json('counts.removed'));
+        $this->assertTrue($apply->json('has_changes'));
+
+        $createdDates = collect($preview->json('impact.created'));
+        $actualCreatedDates = PmScheduleDate::query()
+            ->where('pm_schedule_id', $schedule->id)
+            ->get()
+            ->map(fn (PmScheduleDate $date): string => $date->scheduled_date->toDateString());
+        $this->assertSame(
+            $expectedCreated,
+            $actualCreatedDates->intersect($createdDates)->count(),
+            'Tanggal yang dilaporkan created preview harus benar-benar termaterialisasi.',
+        );
+
+        // Apply ulang tanpa perubahan harus melaporkan zero change secara akurat.
+        $repeat = $this->postApply($checksheet->id, $changedPayload, $apply->json('token'));
+        $repeat->assertOk();
+        $this->assertSame(0, $repeat->json('counts.created'));
+        $this->assertSame(0, $repeat->json('counts.removed'));
+        $this->assertFalse($repeat->json('has_changes'));
+        $this->assertGreaterThan(0, $repeat->json('counts.unchanged'));
+    }
+
+    /**
+     * Setiap schedule ACTIVE harus direconcile tepat sekali per satu apply,
+     * bukan dua kali melalui jalur persist dan jalur agregat.
+     */
+    public function test_apply_reconciles_each_active_schedule_exactly_once(): void
+    {
+        $checksheet = $this->seedChecksheetWithSchedule([
+            'lifecycle_status' => 'active',
+            'is_active' => true,
+        ]);
+        $schedule = PmSchedule::query()->first();
+
+        // Spy mendelegasikan perilaku nyata ke reconciler asli, sambil mencatat
+        // setiap pemanggilan sehingga reconcile ganda dapat dideteksi.
+        $real = app(PmScheduleDateReconciler::class);
+        $reconcileCalls = [];
+        $reconciler = Mockery::mock(PmScheduleDateReconciler::class);
+        $reconciler->shouldReceive('preview')
+            ->andReturnUsing(fn (PmSchedule $target): array => $real->preview($target));
+        $reconciler->shouldReceive('reconcile')
+            ->andReturnUsing(function (PmSchedule $target) use ($real, &$reconcileCalls): array {
+                $reconcileCalls[] = $target->id;
+
+                return $real->reconcile($target);
+            });
+        $this->app->instance(PmScheduleDateReconciler::class, $reconciler);
+
+        $payload = $this->wizardPayload([
+            'frequency_type' => 'weekly',
+            'weekly_days' => [2, 5],
+            'monthly_day' => null,
+            'operational_from' => '2026-06-15',
+            'start_date' => '2026-06-15',
+            'generate_until' => '2026-09-15',
+        ]);
+        $preview = $this->postPreview($checksheet->id, $payload);
+        $preview->assertOk();
+
+        $apply = $this->postApply($checksheet->id, $payload, $preview->json('token'));
+        $apply->assertOk();
+        $apply->assertJsonPath('status', 'applied');
+
+        $this->assertSame(
+            [$schedule->id],
+            $reconcileCalls,
+            'Satu apply hanya boleh mereconcile satu kali per schedule ACTIVE.',
+        );
     }
 }

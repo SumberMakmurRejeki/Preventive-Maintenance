@@ -9,8 +9,10 @@ use App\Models\PmChecksheetMachine;
 use App\Models\PmSchedule;
 use App\Models\PmScheduleDate;
 use App\Models\User;
+use App\Services\Master\PmChecksheetService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
@@ -493,7 +495,7 @@ class MasterPmChecksheetOperationalWindowTest extends TestCase
             'is_active' => true,
         ]);
 
-        $service = app(\App\Services\Master\PmChecksheetService::class);
+        $service = app(PmChecksheetService::class);
 
         // Preview harus melaporkan unresolved
         $preview = $service->previewScheduleDates($checksheet);
@@ -504,8 +506,125 @@ class MasterPmChecksheetOperationalWindowTest extends TestCase
         $this->expectExceptionMessage('Terdapat jadwal dengan tanggal operasional yang belum ditetapkan');
 
         $service->reconcileScheduleDates(
-            new \Illuminate\Http\Request(['confirmed' => true]),
+            new Request(['confirmed' => true]),
             $checksheet
         );
+    }
+
+    /**
+     * TASK-006 Slice C: pembanding "operational_from tidak diubah" harus dibaca
+     * dari era current, bukan era ENDED. Assignment dengan histori ENDED lama
+     * ditambah era current baru tidak boleh menolak payload yang identik dengan
+     * era current hanya karena era ENDED punya tanggal berbeda.
+     */
+    public function test_update_past_operational_from_comparison_uses_current_era_over_ended_history(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-ERA-CMP',
+            'checksheet_name' => 'Era Compare Checksheet',
+            'is_active' => true,
+        ]);
+        $assignment = PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $this->machine->id,
+        ]);
+
+        // Era lama yang sudah terminal: tanggal live-nya berbeda dari era current.
+        $endedEra = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => $assignment->id,
+            'frequency_type' => 'daily',
+            'weekly_days' => null,
+            'monthly_day' => null,
+            'operational_from' => '2026-01-01',
+            'start_date' => '2026-01-01',
+            'generate_until' => '2026-02-01',
+            'is_active' => false,
+            'lifecycle_status' => 'ended',
+        ]);
+
+        // Era current: tanggal live di masa lalu, belum diubah oleh payload.
+        $currentEra = PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => $assignment->id,
+            'frequency_type' => 'daily',
+            'weekly_days' => null,
+            'monthly_day' => null,
+            'operational_from' => '2026-05-01',
+            'start_date' => '2026-05-01',
+            'generate_until' => '2026-06-01',
+            'is_active' => true,
+            'lifecycle_status' => 'active',
+        ]);
+
+        $payload = $this->basePayload([
+            'frequency_type' => 'daily',
+            'operational_from' => '2026-05-01',
+            'weekly_days' => [],
+            'monthly_day' => null,
+        ]);
+
+        $this->actingAs($this->admin)->put("/pm/master-checksheet/{$checksheet->id}", [
+            'checksheet_code' => 'PM-ERA-CMP',
+            'checksheet_name' => 'Era Compare Updated',
+            'description' => 'Updated',
+            'is_active' => '1',
+            'wizard_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+        ])->assertRedirect("/pm/master-checksheet/{$checksheet->id}");
+
+        // Era ENDED tetap utuh; konfigurasi era current boleh direkonsiliasi.
+        $this->assertSame('ended', $endedEra->fresh()->lifecycle_status);
+        $this->assertSame('2026-01-01', $endedEra->fresh()->operational_from?->toDateString());
+        $this->assertSame('active', $currentEra->fresh()->lifecycle_status);
+        $this->assertSame(
+            2,
+            PmSchedule::query()->where('pm_checksheet_machine_id', $assignment->id)->count(),
+        );
+    }
+
+    /**
+     * Kontrol negatif: mengubah operational_from era current ke tanggal masa lalu
+     * yang berbeda tetap ditolak setelah pembanding dipersempit ke era current.
+     */
+    public function test_update_still_rejects_changed_past_operational_from_of_current_era(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-21 00:00:00', 'Asia/Jakarta'));
+
+        $checksheet = PmChecksheet::query()->create([
+            'checksheet_code' => 'PM-ERA-NEG',
+            'checksheet_name' => 'Era Negative Checksheet',
+            'is_active' => true,
+        ]);
+        $assignment = PmChecksheetMachine::query()->create([
+            'pm_checksheet_id' => $checksheet->id,
+            'machine_id' => $this->machine->id,
+        ]);
+        PmSchedule::query()->create([
+            'pm_checksheet_machine_id' => $assignment->id,
+            'frequency_type' => 'daily',
+            'weekly_days' => null,
+            'monthly_day' => null,
+            'operational_from' => '2026-05-01',
+            'start_date' => '2026-05-01',
+            'generate_until' => '2026-06-01',
+            'is_active' => true,
+            'lifecycle_status' => 'active',
+        ]);
+
+        $payload = $this->basePayload([
+            'frequency_type' => 'daily',
+            'operational_from' => '2026-04-15',
+            'weekly_days' => [],
+            'monthly_day' => null,
+        ]);
+
+        $this->actingAs($this->admin)->put("/pm/master-checksheet/{$checksheet->id}", [
+            'checksheet_code' => 'PM-ERA-NEG',
+            'checksheet_name' => 'Era Negative Updated',
+            'description' => 'Updated',
+            'is_active' => '1',
+            'wizard_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+        ])->assertRedirect("/pm/master-checksheet/{$checksheet->id}/edit")
+            ->assertSessionHasErrors('schedule.operational_from');
     }
 }

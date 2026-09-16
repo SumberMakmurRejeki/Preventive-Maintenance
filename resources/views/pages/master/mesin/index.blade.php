@@ -75,6 +75,10 @@
                             >
                                 <option value="">Semua Lokasi</option>
                                 @foreach ($filterLocations as $location)
+                                    {{-- Nilai option tetap nama lokasi (lowercase) agar          --}}
+                                    {{-- filter client-side di app.js tetap cocok dengan            --}}
+                                    {{-- data-location pada setiap row; filter server-side memakai  --}}
+                                    {{-- parameter location_id dari query string.                    --}}
                                     <option value="{{ strtolower($location->location_name) }}" @selected((int) ($filters['location_id'] ?? 0) === $location->id)>
                                         {{ $location->location_name }}
                                     </option>
@@ -89,8 +93,9 @@
                                 data-machine-filter-select
                             >
                                 <option value="">Semua Status</option>
-                                <option value="aktif" @selected($filters['status'] === 'active')>Aktif</option>
-                                <option value="nonaktif" @selected($filters['status'] === 'inactive')>Nonaktif</option>
+                                <option value="active" @selected($filters['status'] === 'active')>Aktif</option>
+                                <option value="inactive" @selected($filters['status'] === 'inactive')>Nonaktif</option>
+                                <option value="retired" @selected($filters['status'] === 'retired')>Pensiun</option>
                             </select>
                     </label>
 
@@ -179,15 +184,15 @@
                                     data-code="{{ strtolower($machine->machine_code) }}"
                                     data-name="{{ strtolower($machine->machine_name) }}"
                                     data-location="{{ strtolower($machine->location?->location_name ?? 'lokasi terhapus') }}"
-                                    data-status="{{ $machine->is_active ? 'aktif' : 'nonaktif' }}"
+                                    data-status="{{ $machine->lifecycle_status }}"
                                 >
                                     <td class="px-4">{{ $machines->firstItem() + $loop->index }}</td>
                                     <td class="px-4">{{ $machine->machine_code }}</td>
                                     <td class="px-4">{{ $machine->machine_name }}</td>
                                     <td class="px-4">{{ $machine->location?->location_name ?? 'Lokasi terhapus' }}</td>
                                     <td class="px-4">
-                                        <span class="inline-flex min-h-7 items-center rounded-[9999px] px-3 py-1 text-[12px] font-semibold tracking-[0.125px] {{ $machine->is_active ? 'bg-[#e9fbf1] text-[#0f8a3b]' : 'bg-[#fff4df] text-[#a15c00]' }}">
-                                            {{ $machine->is_active ? 'Aktif' : 'Nonaktif' }}
+                                        <span class="inline-flex min-h-7 items-center rounded-[9999px] px-3 py-1 text-[12px] font-semibold tracking-[0.125px] {{ $machine->lifecycle_status === 'active' ? 'bg-[#e9fbf1] text-[#0f8a3b]' : ($machine->lifecycle_status === 'retired' ? 'bg-[#f5e9eb] text-[#a31935]' : 'bg-[#fff4df] text-[#a15c00]') }}">
+                                            {{ $machine->lifecycle_status === 'active' ? 'Aktif' : ($machine->lifecycle_status === 'retired' ? 'Pensiun' : 'Nonaktif') }}
                                         </span>
                                     </td>
                                     <td class="px-4 text-center">
@@ -195,12 +200,15 @@
                                     </td>
                                     <td class="px-4">
                                         <div class="flex items-center justify-center gap-1.5">
-                                            <button type="button" data-machine-detail-open data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location="{{ $machine->location?->location_name ?? 'Lokasi terhapus' }}" data-machine-status="{{ $machine->is_active ? 'Aktif' : 'Nonaktif' }}" data-machine-description="{{ $machine->description ?: 'Belum ada deskripsi.' }}" data-machine-created-at="{{ optional($machine->created_at)->translatedFormat('d F Y H:i') }}" data-machine-updated-at="{{ optional($machine->updated_at)->translatedFormat('d F Y H:i') }}" class="h-9 w-9 rounded-[6px] p-2 text-[#615d59] transition hover:bg-[rgba(0,0,0,0.05)]" aria-label="Lihat detail" title="Lihat detail"><x-ui.icon name="eye" class="h-[18px] w-[18px]" /></button>
-                                            <button type="button" data-machine-edit-open data-machine-id="{{ $machine->id }}" data-machine-update-url="{{ route('master-mesin.update', $machine->id) }}" data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location-id="{{ $machine->location_id }}" data-machine-active="{{ $machine->is_active ? 1 : 0 }}" data-machine-description="{{ $machine->description }}" class="h-9 w-9 rounded-[6px] p-2 text-[#615d59] transition hover:bg-[rgba(0,0,0,0.05)] hover:text-[#0075de]" aria-label="Edit mesin" title="Edit mesin"><x-ui.icon name="pencil-square" class="h-[18px] w-[18px]" /></button>
-                                            @if ($machine->is_active)
+                                            <button type="button" data-machine-detail-open data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location="{{ $machine->location?->location_name ?? 'Lokasi terhapus' }}" data-machine-status="{{ $machine->lifecycle_status === 'active' ? 'Aktif' : ($machine->lifecycle_status === 'retired' ? 'Pensiun' : 'Nonaktif') }}" data-machine-description="{{ $machine->description ?: 'Belum ada deskripsi.' }}" data-machine-created-at="{{ optional($machine->created_at)->translatedFormat('d F Y H:i') }}" data-machine-updated-at="{{ optional($machine->updated_at)->translatedFormat('d F Y H:i') }}" class="h-9 w-9 rounded-[6px] p-2 text-[#615d59]" aria-label="Lihat detail" title="Lihat detail"><x-ui.icon name="eye" class="h-[18px] w-[18px]" /></button>
+                                            <button type="button" data-machine-edit-open data-machine-id="{{ $machine->id }}" data-machine-update-url="{{ route('master-mesin.update', $machine->id) }}" data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location-id="{{ $machine->location_id }}" data-machine-description="{{ $machine->description }}" class="h-9 w-9 rounded-[6px] p-2 text-[#615d59] transition hover:bg-[rgba(0,0,0,0.05)] hover:text-[#0075de]" aria-label="Edit mesin" title="Edit mesin"><x-ui.icon name="pencil-square" class="h-[18px] w-[18px]" /></button>
+                                            @if ($machine->lifecycle_status === 'active')
                                                 <button type="button" data-machine-status-open data-machine-status-url="{{ route('master-mesin.deactivate', $machine->id) }}" data-machine-status-label="Nonaktifkan Mesin" data-machine-status-description="Mesin akan dinonaktifkan dan tidak bisa digunakan." data-machine-status-button="Nonaktifkan" data-machine-status-variant="warning" class="h-9 w-9 rounded-[6px] p-2 text-[#615d59] transition hover:bg-[rgba(0,0,0,0.05)] hover:text-[#b86b00]" aria-label="Nonaktifkan mesin" title="Nonaktifkan mesin"><x-ui.icon name="power" class="h-[18px] w-[18px]" /></button>
-                                            @else
+                                            @elseif ($machine->lifecycle_status === 'inactive')
                                                 <button type="button" data-machine-status-open data-machine-status-url="{{ route('master-mesin.activate', $machine->id) }}" data-machine-status-label="Aktifkan Mesin" data-machine-status-description="Mesin akan diaktifkan dan bisa digunakan." data-machine-status-button="Aktifkan" data-machine-status-variant="success" class="h-9 w-9 rounded-[6px] p-2 text-[#615d59] transition hover:bg-[rgba(0,0,0,0.05)] hover:text-[#15803d]" aria-label="Aktifkan mesin" title="Aktifkan mesin"><x-ui.icon name="play" class="h-[18px] w-[18px]" /></button>
+                                            @endif
+                                            @if (in_array($machine->lifecycle_status, ['active', 'inactive'], true))
+                                                <button type="button" data-machine-status-open data-machine-status-url="{{ route('master-mesin.retire', $machine->id) }}" data-machine-status-label="Pensiunkan Mesin" data-machine-status-description="Machine dan Schedule aktifnya akan diakhiri secara permanen." data-machine-status-button="Pensiunkan" data-machine-status-variant="warning" class="h-9 w-9 rounded-[6px] p-2 text-[#615d59] transition hover:bg-[rgba(0,0,0,0.05)] hover:text-[#b86b00]" aria-label="Pensiunkan mesin" title="Pensiunkan mesin"><x-ui.icon name="power" class="h-[18px] w-[18px]" /></button>
                                             @endif
                                             <button type="button" data-machine-delete-open data-machine-delete-url="{{ route('master-mesin.destroy', $machine->id) }}" class="h-9 w-9 rounded-[6px] p-2 text-[#615d59] transition hover:bg-[rgba(0,0,0,0.05)] hover:text-[#dc2626]" aria-label="Hapus permanen" title="Hapus permanen"><x-ui.icon name="trash" class="h-[18px] w-[18px]" /></button>
                                         </div>
@@ -222,22 +230,25 @@
                             data-code="{{ strtolower($machine->machine_code) }}"
                             data-name="{{ strtolower($machine->machine_name) }}"
                             data-location="{{ strtolower($machine->location?->location_name ?? 'lokasi terhapus') }}"
-                            data-status="{{ $machine->is_active ? 'aktif' : 'nonaktif' }}"
+                            data-status="{{ $machine->lifecycle_status }}"
                         >
                             <div class="mb-2 flex items-center justify-between gap-3">
                                 <p class="text-[12px] font-semibold text-[#615d59]">{{ $machine->machine_code }}</p>
-                                <span class="inline-flex min-h-7 items-center rounded-[9999px] px-3 py-1 text-[12px] font-semibold tracking-[0.125px] {{ $machine->is_active ? 'bg-[#e9fbf1] text-[#0f8a3b]' : 'bg-[#fff4df] text-[#a15c00]' }}">{{ $machine->is_active ? 'Aktif' : 'Nonaktif' }}</span>
+                                <span class="inline-flex min-h-7 items-center rounded-[9999px] px-3 py-1 text-[12px] font-semibold tracking-[0.125px] {{ $machine->lifecycle_status === 'active' ? 'bg-[#e9fbf1] text-[#0f8a3b]' : ($machine->lifecycle_status === 'retired' ? 'bg-[#f5e9eb] text-[#a31935]' : 'bg-[#fff4df] text-[#a15c00]') }}">{{ $machine->lifecycle_status === 'active' ? 'Aktif' : ($machine->lifecycle_status === 'retired' ? 'Pensiun' : 'Nonaktif') }}</span>
                             </div>
                             <h3 class="mb-1 text-[15px] font-bold text-[rgba(0,0,0,0.95)]">{{ $machine->machine_name }}</h3>
                             <p class="mb-[10px] text-[13px] text-[#615d59]">Lokasi: {{ $machine->location?->location_name ?? 'Lokasi terhapus' }}</p>
                             <div class="flex flex-wrap gap-2">
                                 <button type="button" data-machine-qr-open data-machine-id="{{ $machine->id }}" data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location="{{ $machine->location?->location_name ?? 'Lokasi terhapus' }}" data-machine-qr-image="{{ $qrImageUrl }}" data-machine-qr-generate-url="{{ route('master-mesin.generate-qr', $machine->id) }}" class="h-9 rounded-[6px] border border-[rgba(0,0,0,0.1)] px-3 text-[12px] font-semibold" aria-label="Lihat / cetak QR">QR</button>
-                                <button type="button" data-machine-detail-open data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location="{{ $machine->location?->location_name ?? 'Lokasi terhapus' }}" data-machine-status="{{ $machine->is_active ? 'Aktif' : 'Nonaktif' }}" data-machine-description="{{ $machine->description ?: 'Belum ada deskripsi.' }}" data-machine-created-at="{{ optional($machine->created_at)->translatedFormat('d F Y H:i') }}" data-machine-updated-at="{{ optional($machine->updated_at)->translatedFormat('d F Y H:i') }}" class="h-9 rounded-[6px] border border-[rgba(0,0,0,0.1)] px-3 text-[12px] font-semibold" aria-label="Lihat detail">Detail</button>
-                                <button type="button" data-machine-edit-open data-machine-id="{{ $machine->id }}" data-machine-update-url="{{ route('master-mesin.update', $machine->id) }}" data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location-id="{{ $machine->location_id }}" data-machine-active="{{ $machine->is_active ? 1 : 0 }}" data-machine-description="{{ $machine->description }}" class="h-9 rounded-[6px] border border-[rgba(0,0,0,0.1)] px-3 text-[12px] font-semibold" aria-label="Edit mesin">Edit</button>
-                                @if ($machine->is_active)
+                                <button type="button" data-machine-detail-open data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location="{{ $machine->location?->location_name ?? 'Lokasi terhapus' }}" data-machine-status="{{ $machine->lifecycle_status === 'active' ? 'Aktif' : ($machine->lifecycle_status === 'retired' ? 'Pensiun' : 'Nonaktif') }}" data-machine-description="{{ $machine->description ?: 'Belum ada deskripsi.' }}" data-machine-created-at="{{ optional($machine->created_at)->translatedFormat('d F Y H:i') }}" data-machine-updated-at="{{ optional($machine->updated_at)->translatedFormat('d F Y H:i') }}" class="h-9 rounded-[6px] border border-[rgba(0,0,0,0.1)] px-3 text-[12px] font-semibold" aria-label="Lihat detail">Detail</button>
+                                <button type="button" data-machine-edit-open data-machine-id="{{ $machine->id }}" data-machine-update-url="{{ route('master-mesin.update', $machine->id) }}" data-machine-code="{{ $machine->machine_code }}" data-machine-name="{{ $machine->machine_name }}" data-machine-location-id="{{ $machine->location_id }}" data-machine-description="{{ $machine->description }}" class="h-9 rounded-[6px] border border-[rgba(0,0,0,0.1)] px-3 text-[12px] font-semibold" aria-label="Edit mesin">Edit</button>
+                                @if ($machine->lifecycle_status === 'active')
                                     <button type="button" data-machine-status-open data-machine-status-url="{{ route('master-mesin.deactivate', $machine->id) }}" data-machine-status-label="Nonaktifkan Mesin" data-machine-status-description="Mesin akan dinonaktifkan dan tidak bisa digunakan." data-machine-status-button="Nonaktifkan" data-machine-status-variant="warning" class="h-9 rounded-[6px] bg-[#b86b00] px-3 text-[12px] font-semibold text-white" aria-label="Nonaktifkan mesin">Nonaktifkan</button>
-                                @else
+                                @elseif ($machine->lifecycle_status === 'inactive')
                                     <button type="button" data-machine-status-open data-machine-status-url="{{ route('master-mesin.activate', $machine->id) }}" data-machine-status-label="Aktifkan Mesin" data-machine-status-description="Mesin akan diaktifkan dan bisa digunakan." data-machine-status-button="Aktifkan" data-machine-status-variant="success" class="h-9 rounded-[6px] bg-[#15803d] px-3 text-[12px] font-semibold text-white" aria-label="Aktifkan mesin">Aktifkan</button>
+                                @endif
+                                @if (in_array($machine->lifecycle_status, ['active', 'inactive'], true))
+                                    <button type="button" data-machine-status-open data-machine-status-url="{{ route('master-mesin.retire', $machine->id) }}" data-machine-status-label="Pensiunkan Mesin" data-machine-status-description="Machine dan Schedule aktifnya akan diakhiri secara permanen." data-machine-status-button="Pensiunkan" data-machine-status-variant="warning" class="h-9 rounded-[6px] bg-[#b86b00] px-3 text-[12px] font-semibold text-white" aria-label="Pensiunkan mesin">Pensiunkan</button>
                                 @endif
                             </div>
                             <button type="button" data-machine-delete-open data-machine-delete-url="{{ route('master-mesin.destroy', $machine->id) }}" class="mt-2 h-9 rounded-[6px] border border-[#ef4444] bg-white px-3 text-[12px] font-semibold text-[#dc2626]" aria-label="Hapus permanen">Hapus Permanen</button>
@@ -290,13 +301,17 @@
                 @error('location_id')<p class="mt-2 text-sm text-[var(--color-prime-danger)]">{{ $message }}</p>@enderror
             </div>
 
-            <div>
-                <label for="machine_is_active" class="mb-2 block text-[14px] font-semibold text-[rgba(0,0,0,0.95)]">Status</label>
-                <select id="machine_is_active" name="is_active" data-machine-form-field="active" class="h-11 w-full rounded-[6px] border border-[#dddddd] px-[14px] py-0 text-[14px] text-[rgba(0,0,0,0.95)] outline-none transition focus:border-[#097fe8] focus:ring-4 focus:ring-[#0075de]/10">
-                    <option value="1" @selected((string) old('is_active', $editingMachineData?->is_active ? '1' : '0') === '1')>Aktif</option>
-                    <option value="0" @selected((string) old('is_active', $editingMachineData?->is_active ? '1' : '0') === '0')>Nonaktif</option>
-                </select>
-            </div>
+            {{-- TASK-006 Slice C: pilihan status hanya untuk create; edit biasa
+                 tidak boleh menampilkan atau memutasi lifecycle mesin. --}}
+            @if (($modalState['action'] ?? null) !== 'edit')
+                <div data-machine-active-wrapper>
+                    <label for="machine_is_active" class="mb-2 block text-[14px] font-semibold text-[rgba(0,0,0,0.95)]">Status</label>
+                    <select id="machine_is_active" name="is_active" data-machine-form-field="active" class="h-11 w-full rounded-[6px] border border-[#dddddd] px-[14px] py-0 text-[14px] text-[rgba(0,0,0,0.95)] outline-none transition focus:border-[#097fe8] focus:ring-4 focus:ring-[#0075de]/10">
+                        <option value="1" @selected((string) old('is_active', '1') === '1')>Aktif</option>
+                        <option value="0" @selected((string) old('is_active', '1') === '0')>Nonaktif</option>
+                    </select>
+                </div>
+            @endif
 
             <div>
                 <label for="machine_description" class="mb-2 block text-[14px] font-semibold text-[rgba(0,0,0,0.95)]">Deskripsi</label>
@@ -349,11 +364,17 @@
             </div>
         </div>
         <div class="mt-6 border-t border-[rgba(0,0,0,0.1)] pt-5">
-            <form action="#" method="POST" class="flex justify-end gap-3" data-machine-status-form>
+            <form action="#" method="POST" class="space-y-4" data-machine-status-form>
                 @csrf
                 <div data-machine-status-method-wrapper>@method('PATCH')</div>
-                <x-ui.button variant="secondary" data-modal-close="machine-status-modal">Batalkan</x-ui.button>
-                <button type="submit" data-machine-status-submit class="inline-flex h-11 items-center justify-center rounded-[6px] bg-[#b86b00] px-[18px] text-[14px] font-semibold text-white transition hover:bg-[#965500]">Nonaktifkan</button>
+                <div>
+                    <label for="machine_status_reason" class="mb-2 block text-[14px] font-semibold text-[rgba(0,0,0,0.95)]">Alasan <span class="text-[var(--color-prime-danger)]">*</span></label>
+                    <textarea id="machine_status_reason" name="reason" rows="3" required maxlength="500" class="w-full rounded-[6px] border border-[#dddddd] px-[14px] py-3 text-[14px] outline-none focus:border-[#097fe8]" data-machine-status-reason></textarea>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <x-ui.button variant="secondary" data-modal-close="machine-status-modal">Batalkan</x-ui.button>
+                    <button type="submit" data-machine-status-submit class="inline-flex h-11 items-center justify-center rounded-[6px] bg-[#b86b00] px-[18px] text-[14px] font-semibold text-white transition hover:bg-[#965500]">Nonaktifkan</button>
+                </div>
             </form>
         </div>
     </x-ui.modal>
