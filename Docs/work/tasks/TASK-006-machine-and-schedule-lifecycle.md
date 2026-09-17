@@ -5,18 +5,18 @@
 - **Phase:** Phase 3 — PM Lifecycle & Planning Completion.
 - **Primary ADR:** ADR-010 — Schedule & Machine Lifecycle.
 - **TASK-006:** IN PROGRESS.
-- **Implementation:** Slices A-B complete; C-E not started.
-- **ADR-010:** IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / NOT DONE.
+- **Implementation:** Slices A-C complete and published; D-E not started.
+- **ADR-010:** IMPLEMENTATION IN PROGRESS / SLICES A-B ACCEPTED / SLICE C CLOSED / NOT DONE.
 - **Slice A — Contract & Data Foundation:** IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / MANAGER ACCEPTED / ENGINEERING COMMITTED / CLOSED / PASS / PUBLISHED at engineering checkpoint `23d64f0c6369931820ae9ec1767e2ce3c52ed430`; tracking closure commit `4a7c48a3c9e7463f065c3bf77fbce8e71b93509e` is published.
 - **Slice B — Schedule Lifecycle:** IMPLEMENTED / VERIFIED / INDEPENDENTLY REVIEWED / CORRECTED / FINAL COMPLIANCE PASS / ENGINEERING COMMITTED / MANAGER ACCEPTED / CLOSED / PASS / PUBLISHED at engineering checkpoint `0f367ecc7d2c7b5b29993d58cf30fdaa7d15ada6`.
-- **Slice C — Machine Lifecycle:** NOT STARTED / NOT AUTHORIZED.
+- **Slice C — Machine Lifecycle:** IMPLEMENTED / VERIFIED / CORRECTIONS SATISFIED (7/7) / ANOMALY RCA CLOSED / MANAGER ACCEPTED / ENGINEERING COMMITTED / PUBLISHED / CLOSED / PASS at engineering FINAL checkpoint `503a1c5eb9a011b7537636337304d7fec0879c3e`.
 - **Slice D — Distributed Writer Integration:** NOT STARTED / NOT AUTHORIZED.
 - **Slice E — Concurrency, UAT & Closure:** NOT STARTED / NOT AUTHORIZED.
 
-The planning authorization above was superseded by the later explicit Slice A
-and Slice B implementation authorizations. Slice A and Slice B engineering and
-tracking publications are complete; Slice C-E remain unauthorized for any code,
-migration, test, database, Git-index, commit, or deployment work.
+Slice A, Slice B, and Slice C engineering and tracking publications are complete.
+Slice C publication is complete; await explicit manager authorization for Slice D.
+Slice D-E remain unauthorized for any code, migration, test, database, Git-index,
+commit, or deployment work.
 
 ## 2. Goal
 
@@ -398,15 +398,47 @@ Implement `MachineLifecycleService` as the authoritative transactional,
 locked, reason/audit-capable Machine transition service for deactivate,
 reactivate, retire, and explicit recommission.
 
+### Result — 2026-09-17 tracking synchronization
+
+- **Status:** IMPLEMENTED / VERIFIED / CORRECTIONS SATISFIED (7/7) / ANOMALY RCA
+  CLOSED / MANAGER ACCEPTED / ENGINEERING COMMITTED / PUBLISHED / CLOSED / PASS.
+- **Engineering checkpoint:** FINAL
+  `503a1c5eb9a011b7537636337304d7fec0879c3e`
+  (`feat(pm): implement machine lifecycle and current-era safeguards`, 29 paths
+  on `develop`, 2026-09-16; parent and `origin/develop`
+  `052859daf4f5affa80031d3ddc781db051eaf5f8`; ahead 1 / behind 0). Delivery
+  includes `MachineLifecycleService`, `MachineRecommissionService`, the
+  current-era unique index migration for `pm_schedules`, executor/QR
+  current-era safeguards, and the Slice C current-era MySQL proof harness.
+- **Verification:** PASS / VERIFIED per the completed reconciliation review.
+  The historical full-suite anomaly was not reproduced in two clean FINAL
+  full-suite runs; Test A/B RCA is CLOSED and is not reopened by this
+  synchronization; no production correction was justified. The MySQL proof is
+  accepted without rerun. `FULL_SUITE_ANOMALY_PLAN.md` is a review-owned
+  artifact and is not a Slice C engineering or publication blocker.
+- **Seven-correction disposition:** the seven review findings existed as
+  publication blockers and are now SATISFIED: (1) scope leakage into Slice D —
+  SATISFIED; (2) missing `ValidationException` import — SATISFIED; (3) skipped
+  soft-deleted ended history — SATISFIED; (4) duplicate reconciliation/count
+  error — SATISFIED; (5) unsafe partial-failure MySQL proof — SATISFIED;
+  (6) inconsistent machine-status UI filters — SATISFIED; (7) regressed
+  server-side location filtering — SATISFIED. Their existence is preserved as
+  review history; this records current disposition only.
+- **Publication:** engineering FINAL is remotely published. Slice C is
+  MANAGER ACCEPTED / PUBLISHED / CLOSED / PASS. The next action is explicit
+  manager authorization for Slice D; publication does not authorize Slice D-E.
+- **Dependency sequence:** unchanged — `A → (B + C) → D → E`; Slice D-E
+  remain NOT STARTED / NOT AUTHORIZED.
+
 ### Acceptance criteria
 
-- [ ] Legal Machine transitions succeed; ordinary `RETIRED → ACTIVE` fails
+- [x] Legal Machine transitions succeed; ordinary `RETIRED → ACTIVE` fails
   closed.
-- [ ] Recommission creates a new operational era and new schedule without
+- [x] Recommission creates a new operational era and new schedule without
   reviving old ended schedules.
-- [ ] New starts are blocked but canonical in-progress execution remains
+- [x] New starts are blocked but canonical in-progress execution remains
   completable.
-- [ ] Focused tests and independent fresh-context review pass.
+- [x] Focused tests and independent fresh-context review pass.
 
 ## 9. Slice D — Distributed Writer Integration
 
